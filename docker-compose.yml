@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  notifier:
+    build: .
+    container_name: movie-club-notifier
+    restart: unless-stopped
+    volumes:
+      # 설정 파일 마운트
+      - ./config.yaml:/app/config.yaml:ro
+      # 상태 데이터 영속화 (컨테이너 재시작 시에도 유지)
+      - ./data/state:/app/data/state
+    environment:
+      # 환경변수로도 설정 가능 (config.yaml보다 우선)
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    # 메모리 제한 (Selenium + Chrome 고려)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M

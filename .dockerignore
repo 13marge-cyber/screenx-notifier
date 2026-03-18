@@ -1,0 +1,10 @@
+.git
+.gitignore
+.env
+*.md
+LICENSE
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+data/state/*.json

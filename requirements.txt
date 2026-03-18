@@ -1,0 +1,14 @@
+# Core
+python-telegram-bot[job-queue]>=22.0
+pyyaml>=6.0
+requests>=2.31
+beautifulsoup4>=4.12
+
+# CGV Cloudflare bypass (fallback)
+cloudscraper>=1.2
+
+# Selenium (CGV crawling - primary)
+selenium>=4.15
+
+# Optional: for production deployment
+# gunicorn>=21.2

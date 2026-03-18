@@ -1,0 +1,87 @@
+# ============================================================
+#  Movie Club Ticket Notifier - Configuration
+#  영화 동아리 알림 봇 설정 파일
+# ============================================================
+#  이 파일을 config.yaml로 복사한 뒤 수정하세요.
+#  cp config.example.yaml config.yaml
+# ============================================================
+
+# ── 텔레그램 봇 설정 ──────────────────────────────────────
+telegram:
+  bot_token: "YOUR_BOT_TOKEN_HERE"       # BotFather에서 발급받은 토큰
+  chat_ids:                               # 알림을 받을 채팅방 ID 목록
+    - "YOUR_CHAT_ID_HERE"                 # 개인 채팅 또는 그룹 채팅 ID
+  # 봇 명령어 언어 (ko / en)
+  language: "ko"
+
+# ── 모니터링 대상 설정 ────────────────────────────────────
+# 각 watcher는 독립적으로 동작하며, 자유롭게 추가/삭제할 수 있습니다.
+watchers:
+
+  # ── CGV 상영 일정 모니터링 ──────────────────────────────
+  - name: "CGV 용산 IMAX"
+    type: "cgv"                           # cgv 전용 크롤러 사용
+    enabled: true
+    interval_minutes: 5                   # 조회 간격 (분)
+    settings:
+      theater_code: "0013"                # 용산아이파크몰
+      area_code: "01"                     # 서울
+      days_ahead: 14                      # 며칠 후까지 조회할지
+      hall_keywords:                      # 감시할 상영관 키워드
+        - "IMAX"
+      movie_keywords: []                  # 비어있으면 모든 영화 감시
+      # movie_keywords: ["헤일메리", "Hail Mary"]  # 특정 영화만 감시
+
+  # ── 무주산골영화제 공지 모니터링 ────────────────────────
+  - name: "무주산골영화제 공지"
+    type: "webpage"                       # 범용 웹페이지 변경 감지
+    enabled: true
+    interval_minutes: 30                  # 조회 간격 (분)
+    settings:
+      url: "https://mjff.or.kr/kor/artyboard/mboard.asp?strBoardID=KZND_Q154"
+      selector: "a.brd_tit"               # 감시할 HTML 요소 (CSS 선택자)
+      encoding: "euc-kr"                  # 페이지 인코딩
+      keywords: []                        # 비어있으면 모든 새 글 알림
+      # keywords: ["예매", "티켓", "신청"]  # 특정 키워드 포함 글만 알림
+
+  # ── 무주산골영화제 예매 페이지 모니터링 ─────────────────
+  - name: "무주산골영화제 예매 오픈"
+    type: "webpage"
+    enabled: true
+    interval_minutes: 60
+    settings:
+      url: "https://mjff.or.kr/kor/artyboard/mboard.asp?Action=view&strBoardID=H63U_QQUO&intSeq=9078"
+      selector: "body"
+      encoding: "euc-kr"
+      keywords: ["예매", "신청", "접수"]
+
+  # ── 추가 예시: 메가박스 모니터링 (비활성) ──────────────
+  # - name: "메가박스 코엑스 돌비시네마"
+  #   type: "webpage"
+  #   enabled: false
+  #   interval_minutes: 10
+  #   settings:
+  #     url: "https://www.megabox.co.kr/theater/time"
+  #     selector: ".theater-schedule"
+  #     encoding: "utf-8"
+  #     keywords: []
+
+# ── 고급 설정 ─────────────────────────────────────────────
+advanced:
+  # Selenium 설정 (CGV 크롤링에 사용)
+  selenium:
+    headless: true                        # 브라우저 창 숨김
+    timeout: 30                           # 페이지 로딩 타임아웃 (초)
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+  # 상태 저장 경로
+  state_dir: "./data/state"
+
+  # 로깅 레벨 (DEBUG / INFO / WARNING / ERROR)
+  log_level: "INFO"
+
+  # 에러 발생 시 재시도 횟수
+  max_retries: 3
+
+  # 알림 중복 방지 쿨다운 (분) - 같은 내용의 알림을 이 시간 내에 재전송하지 않음
+  cooldown_minutes: 60
