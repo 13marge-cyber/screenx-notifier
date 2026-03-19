@@ -122,22 +122,34 @@ class WebpageCrawler:
         if not items:
             return ""
 
-        lines = []
-        lines.append(f"📢 *{_esc(watcher_name)} 업데이트\\!*\n")
-        lines.append(f"새로운 항목이 감지되었습니다\\.\n")
+        from datetime import datetime
+        now_str = _esc(datetime.now().strftime("%Y\\-%m\\-%d %H:%M"))
+        count = len(items)
+        count_str = _esc(str(count))
+
+        lines = [
+            f"📢 *{_esc(watcher_name)}*",
+            f"🔔 새 공지 *{count_str}건* 감지\\!",
+            f"⏰ 감지 시각: {now_str}",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "",
+        ]
 
         for item in items[:10]:  # 최대 10개까지 표시
             title = _esc(item["title"][:100])
             link = item.get("link", "")
             if link:
-                lines.append(f"  • [{title}]({_esc(link)})")
+                lines.append(f"  📌 [{title}]({_esc(link)})")
             else:
-                lines.append(f"  • {title}")
+                lines.append(f"  📌 {title}")
 
         if len(items) > 10:
-            lines.append(f"\n\\.\\.\\. 외 {len(items) - 10}건")
+            extra = _esc(str(len(items) - 10))
+            lines.append(f"\n  \\.\\.\\. 외 {extra}건")
 
-        lines.append(f"\n[🔗 페이지 바로가기]({_esc(self.url)})")
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        lines.append("👇 *아래 버튼을 눌러 확인하세요\\!*")
         return "\n".join(lines)
 
 

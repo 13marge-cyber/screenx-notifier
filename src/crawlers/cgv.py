@@ -12,6 +12,7 @@ Cloudflare 보호를 우회하기 위해 실제 브라우저를 사용합니다.
 import re
 import logging
 from datetime import datetime, timedelta
+from collections import defaultdict
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -322,26 +323,33 @@ class CGVCrawler:
         if not schedules:
             return ""
 
-        lines = []
-        lines.append("🎬 *CGV 새 상영 일정 감지\\!*\n")
+        now_str = _esc(datetime.now().strftime("%Y\\-%m\\-%d %H:%M"))
+        lines = [
+            "🚨 *CGV 새 상영 일정 오픈\\!*",
+            f"⏰ 감지 시각: {now_str}",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "",
+        ]
 
+        # 날짜별로 그룹핑
+        by_date: dict = defaultdict(list)
         for item in schedules:
-            movie = _esc(item["movie"])
-            hall = _esc(item["hall"])
-            date = _esc(item["date"])
-            times_str = ", ".join(t["start"] for t in item.get("times", []))
-            times_str = _esc(times_str)
+            by_date[item["date"]].append(item)
 
-            lines.append(f"📅 *{date}*")
-            lines.append(f"  🎥 {movie}")
-            lines.append(f"  🏛 {hall}")
-            lines.append(f"  ⏰ {times_str}")
+        for date, items in by_date.items():
+            date_esc = _esc(date)
+            lines.append(f"📅 *{date_esc}*")
+            for item in items:
+                movie = _esc(item["movie"])
+                hall = _esc(item["hall"])
+                times_str = _esc(", ".join(t["start"] for t in item.get("times", [])))
+                lines.append(f"  🎥 {movie}")
+                lines.append(f"  🏛 {hall}")
+                lines.append(f"  ⏰ {times_str}")
             lines.append("")
 
-        booking_url = CGV_BOOKING_URL.format(
-            area=self.area_code, theater=self.theater_code
-        )
-        lines.append(f"[👉 지금 예매하기]({_esc(booking_url)})")
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        lines.append("👇 *아래 버튼을 눌러 바로 예매하세요\\!*")
         return "\n".join(lines)
 
 

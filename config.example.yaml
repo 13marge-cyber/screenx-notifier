@@ -32,6 +32,16 @@ watchers:
       movie_keywords: []                  # 비어있으면 모든 영화 감시
       # movie_keywords: ["헤일메리", "Hail Mary"]  # 특정 영화만 감시
 
+      # ── 알림 수신 시 바로가기 버튼 설정 ──────────────────
+      # open_mode 옵션:
+      #   "web"  → 웹 브라우저 버튼만 표시
+      #   "app"  → 앱 버튼만 표시 (앱스토어로 연결)
+      #   "both" → 웹 + 앱 버튼 모두 표시 (권장)
+      #   "none" → 버튼 없음
+      open_mode: "both"
+      web_url: "https://cgv.co.kr/mem/login?returnUrl=%2Ftme%2FtmeShowMore"
+      app_store_url: "https://apps.apple.com/kr/app/cgv/id388521649"
+
   # ── 무주산골영화제 공지 모니터링 ────────────────────────
   - name: "무주산골영화제 공지"
     type: "webpage"                       # 범용 웹페이지 변경 감지
@@ -43,6 +53,8 @@ watchers:
       encoding: "euc-kr"                  # 페이지 인코딩
       keywords: []                        # 비어있으면 모든 새 글 알림
       # keywords: ["예매", "티켓", "신청"]  # 특정 키워드 포함 글만 알림
+      open_mode: "web"
+      # web_url을 지정하지 않으면 감지된 공지 URL로 자동 연결됩니다
 
   # ── 무주산골영화제 예매 페이지 모니터링 ─────────────────
   - name: "무주산골영화제 예매 오픈"
@@ -54,6 +66,7 @@ watchers:
       selector: "body"
       encoding: "euc-kr"
       keywords: ["예매", "신청", "접수"]
+      open_mode: "web"
 
   # ── 추가 예시: 메가박스 모니터링 (비활성) ──────────────
   # - name: "메가박스 코엑스 돌비시네마"
@@ -65,6 +78,23 @@ watchers:
   #     selector: ".theater-schedule"
   #     encoding: "utf-8"
   #     keywords: []
+  #     open_mode: "both"
+  #     web_url: "https://www.megabox.co.kr"
+  #     app_store_url: "https://apps.apple.com/kr/app/megabox/id413435232"
+
+  # ── 추가 예시: 롯데시네마 모니터링 (비활성) ────────────
+  # - name: "롯데시네마 월드타워 SUPER S"
+  #   type: "webpage"
+  #   enabled: false
+  #   interval_minutes: 10
+  #   settings:
+  #     url: "https://www.lottecinema.co.kr/NLCHS/Ticketing/TicketingMovieList"
+  #     selector: ".movie-list"
+  #     encoding: "utf-8"
+  #     keywords: []
+  #     open_mode: "both"
+  #     web_url: "https://www.lottecinema.co.kr"
+  #     app_store_url: "https://apps.apple.com/kr/app/롯데시네마/id376527672"
 
 # ── 고급 설정 ─────────────────────────────────────────────
 advanced:
