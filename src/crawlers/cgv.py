@@ -1,23 +1,26 @@
 """
-CGV 상영 일정 크롤러 (Selenium 기반)
+CGV 상영 일정 크롤러 (신규 사이트 JSON API 기반)
 
-Cloudflare 보호를 우회하기 위해 실제 브라우저를 사용합니다.
-참고: https://github.com/0w0i0n0g0/cgv-open-push
+CGV가 React SPA로 리뉴얼되면서 레거시 HTML 엔드포인트
+(/common/showtimes/iframeTheater.aspx)는 홈페이지로 301 리다이렉트됩니다.
+현재는 SPA가 사용하는 공개 JSON API를 직접 호출합니다.
 
-지원 모드:
-  1. Selenium (기본) - Cloudflare 우회 가능, Chrome 필요
-  2. requests fallback - Selenium 실패 시 시도
+  1. searchSiteScnscYmdListBySite : 극장에 등록된 상영 날짜 목록
+  2. searchMovScnInfo            : 특정 날짜의 상영 회차 전체
+
+Selenium이 필요 없어 1회 조회가 1초 이내에 끝나므로
+1분 간격 감시가 가능합니다.
 """
 
-import re
+import time
 import logging
+import requests
 from datetime import datetime, timedelta
 from collections import defaultdict
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# CGV 극장 코드 사전 (자주 쓰이는 극장)
+# CGV 극장 코드 (siteNo)
 THEATER_CODES = {
     "용산아이파크몰": "0013",
     "영등포": "0059",
@@ -28,302 +31,219 @@ THEATER_CODES = {
     "부산센텀시티": "0061",
 }
 
-# CGV 상영시간표 URL
-CGV_SCHEDULE_URL = "https://www.cgv.co.kr/reserve/show-times/"
-CGV_BOOKING_URL = "https://www.cgv.co.kr/reserve/show-times/?areacode={area}&theaterCode={theater}"
+API_BASE = "https://cgv.co.kr/api/v1/booking"
+DATE_LIST_API = f"{API_BASE}/searchSiteScnscYmdListBySite"
+SHOWTIME_API = f"{API_BASE}/searchMovScnInfo"
+
+# 이 헤더가 없으면 CGV가 JSON 대신 에러 페이지를 반환합니다.
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/150.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+    "Referer": "https://cgv.co.kr/cnm/movieBook/cinema",
+}
+
+
+def _norm_date(value) -> str:
+    """'2026-08-06' / '20260806' / date 객체를 'YYYYMMDD'로 정규화합니다."""
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y%m%d")
+    return str(value).replace("-", "").replace("/", "").strip()
+
+
+def _fmt_time(hhmm: str) -> str:
+    """'1830' → '18:30'. CGV는 심야 상영을 24:30, 25:30처럼 표기합니다."""
+    if not hhmm or len(hhmm) < 4:
+        return hhmm or "?"
+    return f"{hhmm[:2]}:{hhmm[2:4]}"
+
+
+def _fmt_date(yyyymmdd: str) -> str:
+    """'20260806' → '2026-08-06 (목)'"""
+    try:
+        dt = datetime.strptime(yyyymmdd, "%Y%m%d")
+    except ValueError:
+        return yyyymmdd
+    weekday = "월화수목금토일"[dt.weekday()]
+    return f"{dt.strftime('%Y-%m-%d')} ({weekday})"
 
 
 class CGVCrawler:
-    """CGV 상영 일정 크롤러"""
+    """CGV 상영 일정 크롤러 (JSON API)"""
 
     def __init__(self, settings: dict):
-        self.theater_code = settings.get("theater_code", "0013")
-        self.area_code = settings.get("area_code", "01")
-        self.days_ahead = settings.get("days_ahead", 14)
+        self.site_no = str(settings.get("theater_code", "0013"))
+        self.co_cd = settings.get("co_cd", "A420")
+
         self.hall_keywords = [
             kw.upper() for kw in settings.get("hall_keywords", ["IMAX"])
         ]
         self.movie_keywords = [
             kw.upper() for kw in settings.get("movie_keywords", [])
         ]
-        self._driver = None
 
-    def _get_driver(self):
-        """Selenium WebDriver를 생성합니다."""
-        if self._driver is not None:
-            return self._driver
+        # 감시 날짜 지정 방식
+        #   watch_dates    : 매 full scan 때 확인할 날짜 목록
+        #   priority_dates : 매 사이클마다 확인할 날짜 (가장 중요한 날짜)
+        #   days_ahead     : watch_dates가 없을 때 오늘부터 N일치를 감시
+        self.watch_dates = [
+            _norm_date(d) for d in settings.get("watch_dates", []) or []
+        ]
+        self.priority_dates = [
+            _norm_date(d) for d in settings.get("priority_dates", []) or []
+        ]
+        self.days_ahead = settings.get("days_ahead", 14)
 
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.chrome.service import Service
+        # 우선 날짜만 확인하는 사이클을 몇 번 지나면 전체를 훑을지
+        self.full_scan_every = max(1, int(settings.get("full_scan_every", 5)))
+        self.request_delay = float(settings.get("request_delay", 0.3))
+        self.timeout = int(settings.get("timeout", 15))
 
-            options = Options()
-            options.add_argument("--headless=new")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--window-size=1920,1080")
-            options.add_argument(
-                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            )
-            # Cloudflare 감지 우회를 위한 추가 설정
-            options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option("useAutomationExtension", False)
+        self._cycle = 0
+        self._session = requests.Session()
+        self._session.headers.update(DEFAULT_HEADERS)
 
-            self._driver = webdriver.Chrome(options=options)
-            # navigator.webdriver 속성 제거
-            self._driver.execute_cdp_cmd(
-                "Page.addScriptToEvaluateOnNewDocument",
-                {
-                    "source": """
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    })
-                    """
-                },
-            )
-            return self._driver
-        except Exception as e:
-            logger.error(f"Selenium WebDriver 생성 실패: {e}")
-            return None
+    # ── 내부 API 호출 ──────────────────────────────────────────
 
-    def close(self):
-        """WebDriver를 종료합니다."""
-        if self._driver:
+    def _get_json(self, url: str, params: dict, retries: int = 2):
+        """CGV API를 호출해 data 필드를 반환합니다. 실패 시 None."""
+        for attempt in range(retries + 1):
             try:
-                self._driver.quit()
-            except Exception:
-                pass
-            self._driver = None
+                resp = self._session.get(url, params=params, timeout=self.timeout)
+                if resp.status_code != 200:
+                    logger.warning(
+                        f"API 응답 코드 {resp.status_code} ({params.get('scnYmd', '')})"
+                    )
+                else:
+                    payload = resp.json()
+                    if payload.get("statusCode") == 0:
+                        return payload.get("data")
+                    logger.warning(f"API 오류: {payload.get('statusMessage')}")
+            except Exception as e:
+                logger.warning(f"API 호출 실패 ({attempt + 1}/{retries + 1}): {e}")
+            if attempt < retries:
+                time.sleep(1.0)
+        return None
+
+    def get_open_dates(self) -> list[str]:
+        """극장에 상영 일정이 등록된 날짜 목록을 반환합니다."""
+        data = self._get_json(
+            DATE_LIST_API, {"coCd": self.co_cd, "siteNo": self.site_no}
+        )
+        if not data:
+            return []
+        return [row.get("scnYmd") for row in data if row.get("scnYmd")]
+
+    def _fetch_date(self, date_raw: str) -> list[dict]:
+        """특정 날짜의 상영 회차 중 키워드에 맞는 것만 추립니다."""
+        data = self._get_json(
+            SHOWTIME_API,
+            {
+                "coCd": self.co_cd,
+                "siteNo": self.site_no,
+                "scnYmd": date_raw,
+                "rtctlScopCd": "08",
+            },
+        )
+        if not data:
+            return []
+
+        matched = []
+        for row in data:
+            # 상영관: 특별관 등급명(SCREENX/아이맥스/4DX) + 상영관 이름 둘 다 검사
+            grade = (row.get("tcscnsGradNm") or "").strip()
+            hall_name = (row.get("scnsNm") or "").strip()
+            hall_blob = f"{grade} {hall_name}".upper()
+            if self.hall_keywords and not any(
+                kw in hall_blob for kw in self.hall_keywords
+            ):
+                continue
+
+            movie = (row.get("movNm") or "알 수 없음").strip()
+            if self.movie_keywords and not any(
+                kw in movie.upper() for kw in self.movie_keywords
+            ):
+                continue
+
+            matched.append({
+                "date_raw": date_raw,
+                "date": _fmt_date(date_raw),
+                "movie": movie,
+                "hall": hall_name or grade,
+                "grade": grade,
+                "start": _fmt_time(row.get("scnsrtTm")),
+                "end": _fmt_time(row.get("scnendTm")),
+                "seats_left": row.get("frSeatCnt"),
+                "seats_total": row.get("stcnt"),
+            })
+        return matched
+
+    # ── 공개 인터페이스 ────────────────────────────────────────
+
+    def target_dates(self) -> list[str]:
+        """이번 사이클에 조회할 날짜를 결정합니다."""
+        self._cycle += 1
+        full_scan = (self._cycle % self.full_scan_every == 1) or not self.priority_dates
+
+        if self.watch_dates:
+            dates = self.watch_dates if full_scan else self.priority_dates
+        else:
+            today = datetime.now()
+            span = self.days_ahead if full_scan else min(self.days_ahead, 3)
+            dates = [
+                (today + timedelta(days=i)).strftime("%Y%m%d")
+                for i in range(span + 1)
+            ]
+
+        # 우선 날짜는 항상 포함
+        merged = list(dict.fromkeys(list(dates) + self.priority_dates))
+        return sorted(merged)
 
     def check(self) -> dict:
         """
-        상영 일정을 조회하여 결과를 반환합니다.
+        상영 일정을 조회합니다.
 
         Returns:
             {
-                "schedules": [...],  # 매칭된 상영 일정 목록
-                "raw_data": str,     # 변경 감지용 원본 데이터
+                "schedules": [...],   # 키워드에 매칭된 상영 회차
+                "keys": [...],        # 회차별 고유 키 (신규 판별용)
+                "raw_data": str,      # 변경 감지용 서명
             }
         """
         schedules = []
-        raw_parts = []
+        dates = self.target_dates()
 
-        driver = self._get_driver()
-        if not driver:
-            logger.warning("Selenium 사용 불가. requests fallback 시도.")
-            return self._check_with_requests()
+        for i, date_raw in enumerate(dates):
+            if i:
+                time.sleep(self.request_delay)
+            schedules.extend(self._fetch_date(date_raw))
 
-        try:
-            schedules, raw_parts = self._check_with_selenium(driver)
-        except Exception as e:
-            logger.error(f"Selenium 크롤링 실패: {e}")
-            self.close()
-            logger.info("requests fallback 시도...")
-            return self._check_with_requests()
-
+        keys = sorted(showtime_key(s) for s in schedules)
         return {
             "schedules": schedules,
-            "raw_data": "\n".join(raw_parts),
+            "keys": keys,
+            # 조회한 날짜를 서명에 포함해야, 우선 날짜만 훑은 사이클과
+            # 전체를 훑은 사이클이 서로 '변경'으로 오인되지 않습니다.
+            "raw_data": "dates=" + ",".join(dates) + "\n" + "\n".join(keys),
         }
 
-    def _check_with_selenium(self, driver) -> tuple[list, list]:
-        """Selenium으로 상영 일정을 조회합니다."""
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        import time
-
-        schedules = []
-        raw_parts = []
-        today = datetime.now()
-
-        for i in range(self.days_ahead + 1):
-            target_date = today + timedelta(days=i)
-            date_str = target_date.strftime("%Y%m%d")
-            date_display = target_date.strftime("%Y-%m-%d (%a)")
-
-            url = (
-                f"https://www.cgv.co.kr/reserve/show-times/"
-                f"?areacode={self.area_code}"
-                f"&theaterCode={self.theater_code}"
-                f"&date={date_str}"
-            )
-
-            try:
-                driver.get(url)
-                # 페이지 로딩 대기 (최대 15초)
-                time.sleep(3)
-
-                # 페이지 소스 가져오기
-                page_source = driver.page_source
-                raw_parts.append(f"[{date_str}]{page_source[:200]}")
-
-                # 상영 일정 파싱
-                parsed = self._parse_page_source(page_source, date_display, date_str)
-                schedules.extend(parsed)
-
-            except Exception as e:
-                logger.warning(f"날짜 {date_str} 조회 실패: {e}")
-                continue
-
-        return schedules, raw_parts
-
-    def _check_with_requests(self) -> dict:
-        """requests + cloudscraper로 상영 일정을 조회합니다 (fallback)."""
+    def close(self):
+        """세션을 정리합니다."""
         try:
-            import cloudscraper
-        except ImportError:
-            logger.error("cloudscraper가 설치되지 않았습니다: pip install cloudscraper")
-            return {"schedules": [], "raw_data": ""}
-
-        scraper = cloudscraper.create_scraper(
-            browser={"browser": "chrome", "platform": "windows", "mobile": False}
-        )
-
-        schedules = []
-        raw_parts = []
-        today = datetime.now()
-
-        for i in range(self.days_ahead + 1):
-            target_date = today + timedelta(days=i)
-            date_str = target_date.strftime("%Y%m%d")
-            date_display = target_date.strftime("%Y-%m-%d (%a)")
-
-            url = (
-                f"https://www.cgv.co.kr/common/showtimes/iframeTheater.aspx"
-                f"?areacode={self.area_code}"
-                f"&theatercode={self.theater_code}"
-                f"&date={date_str}"
-            )
-
-            try:
-                resp = scraper.get(url, timeout=15)
-                if resp.status_code == 200 and "col-times" in resp.text:
-                    raw_parts.append(f"[{date_str}]{resp.text[:200]}")
-                    parsed = self._parse_legacy_html(resp.text, date_display, date_str)
-                    schedules.extend(parsed)
-                else:
-                    raw_parts.append(f"[{date_str}]empty")
-            except Exception as e:
-                logger.warning(f"requests 조회 실패 (날짜: {date_str}): {e}")
-
-        return {
-            "schedules": schedules,
-            "raw_data": "\n".join(raw_parts),
-        }
-
-    def _parse_page_source(
-        self, html: str, date_display: str, date_raw: str
-    ) -> list[dict]:
-        """
-        CGV 페이지 소스에서 상영 정보를 추출합니다.
-        새 사이트(React)와 레거시 사이트 모두 지원합니다.
-        """
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html, "html.parser")
-        results = []
-
-        # ── 새 사이트 (React/Next.js) 파싱 ──
-        # 상영관 정보가 포함된 요소 탐색
-        hall_sections = soup.select("[class*='hall'], [class*='screen'], [class*='theater']")
-        for section in hall_sections:
-            text = section.get_text(" ", strip=True)
-            # IMAX 등 특별관 키워드 매칭
-            if any(kw in text.upper() for kw in self.hall_keywords):
-                # 영화 제목과 시간 추출 시도
-                movie_el = section.find_previous(["h3", "h4", "strong", "span"], class_=re.compile(r"movie|title|name", re.I))
-                movie_title = movie_el.get_text(strip=True) if movie_el else "영화 제목 확인 필요"
-
-                times = re.findall(r"(\d{1,2}:\d{2})", text)
-                if times:
-                    results.append({
-                        "movie": movie_title,
-                        "hall": text[:50],
-                        "times": [{"start": t} for t in times],
-                        "date": date_display,
-                        "date_raw": date_raw,
-                    })
-
-        # ── 레거시 사이트 파싱 (fallback) ──
-        if not results:
-            results = self._parse_legacy_html(html, date_display, date_raw)
-
-        # 영화 키워드 필터링
-        if self.movie_keywords:
-            results = [
-                r for r in results
-                if any(kw in r["movie"].upper() for kw in self.movie_keywords)
-            ]
-
-        return results
-
-    def _parse_legacy_html(
-        self, html: str, date_display: str, date_raw: str
-    ) -> list[dict]:
-        """CGV 레거시 상영시간표 HTML을 파싱합니다."""
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html, "html.parser")
-        results = []
-
-        movie_sections = soup.select("div.col-times")
-        for section in movie_sections:
-            title_el = section.select_one("div.info-movie a strong")
-            if not title_el:
-                title_el = section.select_one("div.info-movie strong")
-            movie_title = title_el.get_text(strip=True) if title_el else "알 수 없음"
-
-            type_halls = section.select("div.type-hall")
-            for hall_section in type_halls:
-                hall_name_el = hall_section.select_one("div.info-hall li:first-child")
-                hall_name = (
-                    hall_name_el.get_text(strip=True) if hall_name_el else "알 수 없음"
-                )
-
-                # 특별관 키워드 매칭
-                if not any(kw in hall_name.upper() for kw in self.hall_keywords):
-                    continue
-
-                time_entries = []
-                time_links = hall_section.select(
-                    "div.info-timetable a, div.info-timetable em"
-                )
-                for tl in time_links:
-                    time_text = tl.get_text(strip=True)
-                    time_match = re.search(r"(\d{1,2}:\d{2})", time_text)
-                    if time_match:
-                        time_entries.append({"start": time_match.group(1)})
-
-                if time_entries:
-                    results.append({
-                        "movie": movie_title,
-                        "hall": hall_name,
-                        "times": time_entries,
-                        "date": date_display,
-                        "date_raw": date_raw,
-                    })
-
-        # 영화 키워드 필터링
-        if self.movie_keywords:
-            results = [
-                r for r in results
-                if any(kw in r["movie"].upper() for kw in self.movie_keywords)
-            ]
-
-        return results
+            self._session.close()
+        except Exception:
+            pass
 
     def format_message(self, schedules: list[dict]) -> str:
         """알림 메시지를 포맷팅합니다 (Telegram MarkdownV2)."""
         if not schedules:
             return ""
 
-        now_str = _esc(datetime.now().strftime("%Y\\-%m\\-%d %H:%M"))
+        now_str = _esc(datetime.now().strftime("%Y-%m-%d %H:%M"))
         lines = [
             "🚨 *CGV 새 상영 일정 오픈\\!*",
             f"⏰ 감지 시각: {now_str}",
@@ -331,26 +251,27 @@ class CGVCrawler:
             "",
         ]
 
-        # 날짜별로 그룹핑
-        by_date: dict = defaultdict(list)
+        by_date_movie = defaultdict(list)
         for item in schedules:
-            by_date[item["date"]].append(item)
+            by_date_movie[(item["date"], item["movie"], item["hall"])].append(item)
 
-        for date, items in by_date.items():
-            date_esc = _esc(date)
-            lines.append(f"📅 *{date_esc}*")
-            for item in items:
-                movie = _esc(item["movie"])
-                hall = _esc(item["hall"])
-                times_str = _esc(", ".join(t["start"] for t in item.get("times", [])))
-                lines.append(f"  🎥 {movie}")
-                lines.append(f"  🏛 {hall}")
-                lines.append(f"  ⏰ {times_str}")
+        for (date, movie, hall), items in sorted(by_date_movie.items()):
+            items.sort(key=lambda x: x["start"])
+            times_str = ", ".join(i["start"] for i in items)
+            lines.append(f"📅 *{_esc(date)}*")
+            lines.append(f"  🎥 {_esc(movie)}")
+            lines.append(f"  🏛 {_esc(hall)}")
+            lines.append(f"  ⏰ {_esc(times_str)}")
             lines.append("")
 
         lines.append("━━━━━━━━━━━━━━━━━━━━")
         lines.append("👇 *아래 버튼을 눌러 바로 예매하세요\\!*")
         return "\n".join(lines)
+
+
+def showtime_key(item: dict) -> str:
+    """상영 회차 하나를 식별하는 키. 신규 회차 판별에 사용합니다."""
+    return f"{item['date_raw']}|{item['movie']}|{item['hall']}|{item['start']}"
 
 
 def _esc(text: str) -> str:

@@ -261,8 +261,29 @@ class MovieClubBot:
         # 알림 메시지 생성
         link = ""
         if wtype == "cgv":
+            from src.crawlers.cgv import showtime_key
+
             schedules = result.get("schedules", [])
-            msg = crawler.format_message(schedules) if schedules else None
+            old_state = self.state_mgr.get_state(name)
+            known = set(old_state.get("keys", []))
+
+            if old_state.get("initialized"):
+                # 이미 알고 있던 회차는 제외하고 새로 생긴 것만 알립니다.
+                new_items = [
+                    s for s in schedules if showtime_key(s) not in known
+                ]
+            else:
+                # 첫 실행은 기준선만 잡고 알리지 않습니다.
+                new_items = []
+                logger.info(f"[{name}] 첫 실행: 현재 {len(schedules)}건을 기준선으로 저장")
+
+            msg = crawler.format_message(new_items) if new_items else None
+
+            # 우선 날짜만 훑은 사이클이 전체 목록을 지우지 않도록 합집합으로 누적
+            state = self.state_mgr.get_state(name)
+            state["keys"] = sorted(known | set(result.get("keys", [])))
+            state["initialized"] = True
+            self.state_mgr.save_state(name, state)
         elif wtype == "webpage":
             items = result.get("items", [])
             old_state = self.state_mgr.get_state(name)

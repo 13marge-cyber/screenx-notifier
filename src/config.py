@@ -37,8 +37,10 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    _validate_config(config)
+    # 환경변수를 먼저 반영해야 합니다. 토큰을 환경변수로만 주입하는
+    # 환경(GitHub Actions 등)에서 검증이 먼저 돌면 오탐으로 종료됩니다.
     _apply_env_overrides(config)
+    _validate_config(config)
 
     return config
 
@@ -84,13 +86,15 @@ def _validate_config(config: dict) -> None:
 
 def _apply_env_overrides(config: dict) -> None:
     """환경변수로 설정값을 오버라이드합니다. (Docker/CI 환경 지원)"""
+    telegram = config.setdefault("telegram", {})
+
     env_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if env_token:
-        config["telegram"]["bot_token"] = env_token
+        telegram["bot_token"] = env_token
 
     env_chat_ids = os.environ.get("TELEGRAM_CHAT_IDS")
     if env_chat_ids:
-        config["telegram"]["chat_ids"] = [
+        telegram["chat_ids"] = [
             cid.strip() for cid in env_chat_ids.split(",")
         ]
 

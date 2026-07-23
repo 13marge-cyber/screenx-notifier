@@ -33,6 +33,46 @@ def run_bot(config: dict):
     bot.run()
 
 
+def run_once(config: dict):
+    """
+    1회 확인 후 변경이 있으면 텔레그램 알림까지 보내고 종료합니다.
+
+    GitHub Actions 등 프로세스를 상주시킬 수 없는 환경에서 사용합니다.
+    봇 상주 모드와 동일한 감지/알림 로직을 그대로 재사용합니다.
+    """
+    import asyncio
+    from telegram import Bot
+    from src.bot.telegram_bot import MovieClubBot
+
+    bot = MovieClubBot(config)
+
+    class _Context:
+        """job_queue 컨텍스트 대신 bot 핸들만 전달하는 최소 어댑터"""
+        def __init__(self, tg_bot):
+            self.bot = tg_bot
+
+    async def _main() -> int:
+        tg_bot = Bot(config["telegram"]["bot_token"])
+        ctx = _Context(tg_bot)
+        alerted = 0
+
+        async with tg_bot:
+            for watcher in bot._get_all_watchers():
+                name = watcher["name"]
+                info = await bot._run_single_watcher(watcher, ctx, send_alert=True)
+                if info.get("error"):
+                    logging.error(f"[{name}] 실패: {info['error']}")
+                elif info.get("msg"):
+                    logging.info(f"[{name}] 🔔 새 일정 감지 → 알림 전송")
+                    alerted += 1
+                else:
+                    logging.info(f"[{name}] 변경 없음")
+        return alerted
+
+    count = asyncio.run(_main())
+    print(f"확인 완료. 알림 {count}건 전송.")
+
+
 def run_check(config: dict):
     """1회 즉시 확인 후 종료합니다. (테스트/디버깅용)"""
     from src.state import StateManager
@@ -77,8 +117,11 @@ def run_check(config: dict):
             schedules = result.get("schedules", [])
             print(f"  📋 발견된 상영 일정: {len(schedules)}개")
             for s in schedules:
-                times = ", ".join(t["start"] for t in s.get("times", []))
-                print(f"    [{s['date']}] {s['movie']} @ {s['hall']} ({times})")
+                seats = f"{s.get('seats_left')}/{s.get('seats_total')}석"
+                print(
+                    f"    [{s['date']}] {s['start']} {s['movie']} "
+                    f"@ {s['hall']} ({seats})"
+                )
         elif wtype == "webpage":
             items = result.get("items", [])
             print(f"  📋 발견된 항목: {len(items)}개")
@@ -111,7 +154,12 @@ def main():
     parser.add_argument(
         "--check",
         action="store_true",
-        help="1회 즉시 확인 후 종료 (테스트/디버깅용)",
+        help="1회 즉시 확인 후 종료 (테스트/디버깅용, 알림 없음)",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="1회 확인 후 변경이 있으면 알림까지 전송하고 종료 (GitHub Actions용)",
     )
     args = parser.parse_args()
 
@@ -120,7 +168,9 @@ def main():
     log_level = config.get("advanced", {}).get("log_level", "INFO")
     setup_logging(log_level)
 
-    if args.check:
+    if args.once:
+        run_once(config)
+    elif args.check:
         run_check(config)
     else:
         run_bot(config)
