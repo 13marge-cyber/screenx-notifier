@@ -30,10 +30,12 @@
 ## ✨ 기능
 
 ### 🎟 CGV 특별관 예매 오픈 감지
-- **Selenium 기반** Cloudflare 우회로 CGV 사이트 직접 크롤링
+- CGV 신규 사이트의 **공개 JSON API 직접 호출** (Selenium·Chrome 불필요)
+- 1회 조회가 1초 내에 끝나 **1분 간격 감시** 가능
 - IMAX, 4DX, ScreenX 등 **특별관 필터링**
 - 특정 영화만 감시하는 **키워드 필터** 지원
-- 새 상영 일정 등록 시 **즉시 텔레그램 알림**
+- `watch_dates`로 감시 날짜를 좁혀 필요한 날짜만 정밀 감시
+- 새 상영 회차가 생기면 **그 회차만** 골라 텔레그램 알림
 
 ### 📢 영화제 공지 모니터링
 - 무주산골영화제 등 **게시판 새 글 감지**
@@ -65,9 +67,9 @@
 ├─────────┬──────────────┬────────────────────────┤
 │  CGV    │   Webpage    │    (확장 가능)          │
 │ Crawler │   Crawler    │   Your Custom Crawler   │
-│(Selenium│  (requests)  │                         │
-│  +CF    │              │                         │
-│ bypass) │              │                         │
+│ (JSON   │  (requests)  │                         │
+│  API,   │              │                         │
+│ requests)│             │                         │
 ├─────────┴──────────────┴────────────────────────┤
 │              State Manager (JSON)                │
 │         변경 감지 · 중복 알림 방지 · 해시 비교     │
@@ -117,7 +119,20 @@ python main.py
 #### 방법 C: 테스트 모드 (1회 확인)
 
 ```bash
-python main.py --check
+python main.py --check   # 1회 확인, 결과만 출력 (알림 없음)
+python main.py --once    # 1회 확인, 변경이 있으면 알림까지 전송
+```
+
+`--once`는 프로세스를 상주시킬 수 없는 GitHub Actions/cron 환경용입니다.
+
+#### 방법 D: 상시 서버 (Oracle Cloud 등 Ubuntu VM)
+
+맥북을 꺼도 계속 감시하려면 서버에 systemd 서비스로 등록하세요:
+
+```bash
+git clone <this-repo> && cd movie-club-ticket-notifier
+bash deploy/setup-vm.sh   # 안내에 따라 config.yaml 작성 후 재실행
+journalctl -u screenx-notifier -f
 ```
 
 ### 3. 채팅 ID 확인
