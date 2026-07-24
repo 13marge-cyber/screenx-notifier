@@ -3,6 +3,10 @@
 YAML 설정 파일을 읽고 검증하는 모듈
 """
 
+# str | None 같은 타입 힌트를 Python 3.9에서도 쓰기 위함
+# (Oracle Linux 9의 기본 파이썬이 3.9입니다)
+from __future__ import annotations
+
 import os
 import sys
 import logging

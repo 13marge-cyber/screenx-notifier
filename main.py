@@ -51,10 +51,11 @@ def run_once(config: dict):
         def __init__(self, tg_bot):
             self.bot = tg_bot
 
-    async def _main() -> int:
+    async def _main():
         tg_bot = Bot(config["telegram"]["bot_token"])
         ctx = _Context(tg_bot)
         alerted = 0
+        failed = 0
 
         async with tg_bot:
             for watcher in bot._get_all_watchers():
@@ -62,15 +63,21 @@ def run_once(config: dict):
                 info = await bot._run_single_watcher(watcher, ctx, send_alert=True)
                 if info.get("error"):
                     logging.error(f"[{name}] 실패: {info['error']}")
+                    failed += 1
                 elif info.get("msg"):
                     logging.info(f"[{name}] 🔔 새 일정 감지 → 알림 전송")
                     alerted += 1
                 else:
                     logging.info(f"[{name}] 변경 없음")
-        return alerted
+        return alerted, failed
 
-    count = asyncio.run(_main())
+    count, failed = asyncio.run(_main())
     print(f"확인 완료. 알림 {count}건 전송.")
+
+    # 감시가 죽은 채로 워크플로가 '성공'으로 보이면 장애를 놓칩니다.
+    if failed:
+        print(f"!! {failed}개 watcher가 실패했습니다. 로그를 확인하세요.")
+        sys.exit(1)
 
 
 def run_check(config: dict):

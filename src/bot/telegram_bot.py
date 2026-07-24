@@ -12,6 +12,10 @@
   - 알림 시 웹/앱 바로가기 버튼 제공 (open_mode: web/app/both)
 """
 
+# InlineKeyboardMarkup | None 같은 타입 힌트를 Python 3.9에서도 쓰기 위함
+# (Oracle Linux 9의 기본 파이썬이 3.9입니다)
+from __future__ import annotations
+
 import logging
 import asyncio
 import json

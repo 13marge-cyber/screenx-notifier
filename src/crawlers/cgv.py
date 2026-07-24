@@ -138,8 +138,13 @@ class CGVCrawler:
             return []
         return [row.get("scnYmd") for row in data if row.get("scnYmd")]
 
-    def _fetch_date(self, date_raw: str) -> list[dict]:
-        """특정 날짜의 상영 회차 중 키워드에 맞는 것만 추립니다."""
+    def _fetch_date(self, date_raw: str):
+        """
+        특정 날짜의 상영 회차 중 키워드에 맞는 것만 추립니다.
+
+        조회 자체가 실패하면 None을 반환합니다.
+        "회차가 0건"과 "조회 실패"를 구분해야 하기 때문입니다.
+        """
         data = self._get_json(
             SHOWTIME_API,
             {
@@ -149,6 +154,8 @@ class CGVCrawler:
                 "rtctlScopCd": "08",
             },
         )
+        if data is None:
+            return None
         if not data:
             return []
 
@@ -216,11 +223,29 @@ class CGVCrawler:
         """
         schedules = []
         dates = self.target_dates()
+        failed = []
 
         for i, date_raw in enumerate(dates):
             if i:
                 time.sleep(self.request_delay)
-            schedules.extend(self._fetch_date(date_raw))
+            result = self._fetch_date(date_raw)
+            if result is None:
+                failed.append(date_raw)
+            else:
+                schedules.extend(result)
+
+        # 전부 실패했다면 "예매 없음"이 아니라 감시가 죽은 것입니다.
+        # 조용히 0건을 돌려주면 차단·네트워크 장애를 정상으로 오인하게 됩니다.
+        if failed and len(failed) == len(dates):
+            raise RuntimeError(
+                f"CGV 조회가 전부 실패했습니다 ({len(failed)}개 날짜). "
+                f"IP 차단(403)이나 네트워크 장애일 수 있습니다."
+            )
+        if failed:
+            logger.error(
+                f"일부 날짜 조회 실패: {', '.join(failed)} "
+                f"(성공 {len(dates) - len(failed)}/{len(dates)})"
+            )
 
         keys = sorted(showtime_key(s) for s in schedules)
         return {

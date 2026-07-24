@@ -1,0 +1,18 @@
+# Oracle Linux 9 / Python 3.9 환경용 의존성
+#
+# 기본 requirements.txt는 python-telegram-bot 22.x를 쓰는데,
+# 22.x는 Python 3.10 이상을 요구합니다.
+# Oracle Linux 9의 기본 파이썬은 3.9라서, 3.9를 지원하는 마지막 계열인
+# 21.11.x로 고정합니다. (VM이 1/8 OCPU로 약해 파이썬 추가 설치를 피하려는 목적)
+#
+# 사용법: pip install -r requirements-vm.txt
+
+python-telegram-bot[job-queue]>=21.11,<22
+pyyaml>=6.0
+requests>=2.31
+
+# CGV 크롤러 자체는 JSON API만 쓰지만, main.py --check가
+# WebpageCrawler를 무조건 임포트하므로 bs4는 있어야 합니다.
+beautifulsoup4>=4.12
+
+# selenium / cloudscraper는 더 이상 필요하지 않습니다.
