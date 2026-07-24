@@ -57,6 +57,8 @@ class MovieClubBot:
         self.watchers_config = config.get("watchers", [])
         self.advanced = config.get("advanced", {})
         self.app: Application | None = None
+        # run(polling=False)로 덮어씁니다. _post_init이 참조합니다.
+        self.polling = True
 
         # 크롤러 인스턴스 캐시
         self._crawlers: dict[str, Any] = {}
@@ -645,16 +647,17 @@ class MovieClubBot:
 
     async def _post_init(self, application: Application):
         """봇 초기화 후 명령어 목록 설정 및 스케줄러 등록"""
-        commands = [
-            BotCommand("start", "봇 시작 및 알림 등록"),
-            BotCommand("check", "즉시 전체 확인"),
-            BotCommand("status", "모니터링 상태 확인"),
-            BotCommand("add", "URL 모니터링 추가"),
-            BotCommand("list", "내 알림 목록"),
-            BotCommand("remove", "내 알림 제거"),
-            BotCommand("help", "도움말"),
-        ]
-        await application.bot.set_my_commands(commands)
+        if self.polling:
+            commands = [
+                BotCommand("start", "봇 시작 및 알림 등록"),
+                BotCommand("check", "즉시 전체 확인"),
+                BotCommand("status", "모니터링 상태 확인"),
+                BotCommand("add", "URL 모니터링 추가"),
+                BotCommand("list", "내 알림 목록"),
+                BotCommand("remove", "내 알림 제거"),
+                BotCommand("help", "도움말"),
+            ]
+            await application.bot.set_my_commands(commands)
 
         job_queue = application.job_queue
         enabled_watchers = [w for w in self.watchers_config if w.get("enabled", True)]
@@ -684,7 +687,9 @@ class MovieClubBot:
                 )
 
         # 시작 알림 전송
-        if self.chat_ids:
+        # 폴링 없는 모드(GitHub Actions 루프)는 몇 시간마다 프로세스가
+        # 새로 뜨므로, 시작 알림을 보내면 그때마다 알림이 쌓입니다.
+        if self.chat_ids and self.polling:
             bot = application.bot
             start_msg = (
                 "🚀 *영화 동아리 알림 봇이 시작되었습니다\\!*\n\n"
@@ -702,8 +707,16 @@ class MovieClubBot:
                 except Exception as e:
                     logger.warning(f"시작 알림 전송 실패 ({chat_id}): {e}")
 
-    def run(self):
-        """봇을 실행합니다."""
+    def run(self, polling: bool = True):
+        """
+        봇을 실행합니다.
+
+        polling=False면 텔레그램 명령어 수신(getUpdates) 없이
+        감시 스케줄러만 돌립니다. 같은 봇 토큰으로 두 곳에서 폴링하면
+        텔레그램이 409를 반환하며 서로를 밀어내기 때문에,
+        상시 서버와 GitHub Actions를 동시에 굴릴 때 필요합니다.
+        """
+        self.polling = polling
         logger.info("텔레그램 봇 시작 중...")
 
         self.app = (
@@ -713,16 +726,44 @@ class MovieClubBot:
             .build()
         )
 
-        self.app.add_handler(CommandHandler("start", self.cmd_start))
-        self.app.add_handler(CommandHandler("status", self.cmd_status))
-        self.app.add_handler(CommandHandler("check", self.cmd_check))
-        self.app.add_handler(CommandHandler("add", self.cmd_add))
-        self.app.add_handler(CommandHandler("list", self.cmd_list))
-        self.app.add_handler(CommandHandler("remove", self.cmd_remove))
-        self.app.add_handler(CommandHandler("help", self.cmd_help))
+        if polling:
+            self.app.add_handler(CommandHandler("start", self.cmd_start))
+            self.app.add_handler(CommandHandler("status", self.cmd_status))
+            self.app.add_handler(CommandHandler("check", self.cmd_check))
+            self.app.add_handler(CommandHandler("add", self.cmd_add))
+            self.app.add_handler(CommandHandler("list", self.cmd_list))
+            self.app.add_handler(CommandHandler("remove", self.cmd_remove))
+            self.app.add_handler(CommandHandler("help", self.cmd_help))
 
-        logger.info("봇이 실행 중입니다. Ctrl+C로 종료합니다.")
-        self.app.run_polling(drop_pending_updates=True)
+            logger.info("봇이 실행 중입니다. Ctrl+C로 종료합니다.")
+            self.app.run_polling(drop_pending_updates=True)
+        else:
+            logger.info("감시 전용 모드입니다 (텔레그램 명령어 수신 없음).")
+            asyncio.run(self._serve_scheduler_only())
+
+    async def _serve_scheduler_only(self):
+        """폴링 없이 스케줄러만 띄우고 종료 신호를 기다립니다."""
+        import signal
+
+        await self.app.initialize()
+        # run_polling이 대신 호출해주던 post_init을 직접 부릅니다.
+        await self._post_init(self.app)
+        await self.app.start()
+
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:
+                pass  # 일부 플랫폼은 미지원
+
+        try:
+            await stop.wait()
+        finally:
+            logger.info("종료 신호 수신, 정리 중...")
+            await self.app.stop()
+            await self.app.shutdown()
 
 
 def _esc(text: str) -> str:

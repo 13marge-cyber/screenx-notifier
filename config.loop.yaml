@@ -1,0 +1,58 @@
+# ============================================================
+#  GitHub Actions 상시 루프 전용 설정
+# ============================================================
+#  이 파일은 리포에 커밋되므로 비밀값을 넣지 마세요.
+#  봇 토큰과 채팅 ID는 Secrets에서 환경변수로 주입됩니다.
+#    TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_IDS
+#
+#  워크플로가 --no-polling으로 이 설정을 띄워 5시간여 동안
+#  1분 간격 감시를 수행한 뒤, 자기 자신을 다시 실행시킵니다.
+# ============================================================
+
+telegram:
+  bot_token: "SET_VIA_ENV"
+  chat_ids: []
+  language: "ko"
+
+watchers:
+  - name: "CGV 용산 ScreenX 스파이더맨"
+    type: "cgv"
+    enabled: true
+    interval_minutes: 1                   # 1분 간격 감시
+    settings:
+      theater_code: "0013"                # 용산아이파크몰
+      hall_keywords:
+        - "ScreenX"
+      movie_keywords:
+        - "스파이더맨"
+
+      # 2026-08-04까지는 이미 예매가 열려 있어 제외합니다.
+      # 아직 안 열린 날짜만 보므로 기준선이 0건이고,
+      # 첫 회차가 뜨는 순간이 곧 예매 오픈 신호가 됩니다.
+      priority_dates:                     # 매 분 확인
+        - "2026-08-06"
+      watch_dates:                        # 5분마다 전체 확인
+        - "2026-08-05"
+        - "2026-08-06"
+        - "2026-08-07"
+        - "2026-08-08"
+        - "2026-08-09"
+        - "2026-08-10"
+        - "2026-08-11"
+        - "2026-08-12"
+        - "2026-08-13"
+        - "2026-08-14"
+        - "2026-08-15"
+      full_scan_every: 5
+      request_delay: 0.3
+
+      open_mode: "both"
+      web_url: "https://cgv.co.kr/mem/login?returnUrl=%2Fcnm%2FmovieBook%2Fcinema"
+      app_store_url: "https://apps.apple.com/kr/app/cgv/id388521649"
+
+advanced:
+  # data/state/*.json은 .gitignore에 걸려 커밋이 안 되므로 별도 경로 사용
+  state_dir: "./data/actions-state"
+  log_level: "INFO"
+  max_retries: 3
+  cooldown_minutes: 60

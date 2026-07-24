@@ -25,12 +25,12 @@ def setup_logging(level: str = "INFO"):
     )
 
 
-def run_bot(config: dict):
+def run_bot(config: dict, polling: bool = True):
     """텔레그램 봇을 실행합니다."""
     from src.bot.telegram_bot import MovieClubBot
 
     bot = MovieClubBot(config)
-    bot.run()
+    bot.run(polling=polling)
 
 
 def run_once(config: dict):
@@ -96,6 +96,8 @@ def run_check(config: dict):
     print(f"  활성 모니터링: {len(watchers)}개")
     print(f"{'='*50}\n")
 
+    failures = 0
+
     for watcher in watchers:
         name = watcher["name"]
         wtype = watcher["type"]
@@ -115,6 +117,7 @@ def run_check(config: dict):
             result = crawler.check()
         except Exception as e:
             print(f"  ❌ 크롤링 실패: {e}")
+            failures += 1
             continue
 
         raw_data = result.get("raw_data", "")
@@ -147,6 +150,12 @@ def run_check(config: dict):
 
     print("확인 완료.")
 
+    # 조회가 막힌 상태를 '정상'으로 넘기면, 감시가 죽은 줄 모른 채
+    # 몇 시간을 흘려보내게 됩니다. 종료 코드로 분명히 알립니다.
+    if failures:
+        print(f"!! {failures}개 watcher가 실패했습니다.")
+        sys.exit(1)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -168,6 +177,14 @@ def main():
         action="store_true",
         help="1회 확인 후 변경이 있으면 알림까지 전송하고 종료 (GitHub Actions용)",
     )
+    parser.add_argument(
+        "--no-polling",
+        action="store_true",
+        help=(
+            "텔레그램 명령어 수신 없이 감시만 수행 "
+            "(같은 봇을 두 곳에서 돌릴 때 폴링 충돌 방지)"
+        ),
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -180,7 +197,7 @@ def main():
     elif args.check:
         run_check(config)
     else:
-        run_bot(config)
+        run_bot(config, polling=not args.no_polling)
 
 
 if __name__ == "__main__":
