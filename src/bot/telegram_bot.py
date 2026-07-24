@@ -63,6 +63,12 @@ class MovieClubBot:
         # 크롤러 인스턴스 캐시
         self._crawlers: dict[str, Any] = {}
 
+        # 하트비트 메시지에 쓰는 실행 통계
+        self._last_check_at: datetime | None = None
+        self._last_error: str | None = None
+        self._check_count = 0
+        self._alert_count = 0
+
         # 상태 관리자
         from src.state import StateManager
         state_dir = self.advanced.get("state_dir", "./data/state")
@@ -157,6 +163,54 @@ class MovieClubBot:
                 except Exception as e2:
                     logger.error(f"일반 텍스트 전송도 실패: {e2}")
 
+    async def _send_heartbeat(self, context: ContextTypes.DEFAULT_TYPE):
+        """
+        하루 한 번 '감시가 살아있다'는 메시지를 보냅니다.
+
+        감시 프로세스는 몇 시간마다 새로 뜨기 때문에, 텔레그램만 보고는
+        감시가 죽었는지 알 수 없습니다. 조용한 게 '오픈 전'인지
+        '감시 중단'인지 구분해주는 용도입니다.
+        """
+        watchers = self._get_all_watchers()
+        names = ", ".join(w["name"] for w in watchers) or "없음"
+        intervals = {w.get("interval_minutes", 5) for w in watchers}
+        interval_txt = ", ".join(f"{m}분" for m in sorted(intervals)) or "-"
+
+        if self._last_check_at:
+            last_txt = self._last_check_at.strftime("%m-%d %H:%M")
+        else:
+            last_txt = "아직 없음"
+
+        if self._last_error:
+            head = "⚠️ *감시 중 오류가 있습니다*"
+            tail = f"마지막 오류: {_esc(self._last_error[:120])}"
+        else:
+            head = "💓 *감시 정상 작동 중*"
+            tail = "새 회차가 뜨면 즉시 알려드릴게요\\."
+
+        msg = "\n".join([
+            head,
+            "",
+            f"📡 대상: {_esc(names)}",
+            f"⏱ 주기: {_esc(interval_txt)}마다",
+            f"🔍 최근 확인: {_esc(last_txt)}",
+            f"📊 이번 세션 확인: {self._check_count}회",
+            f"🔔 누적 알림: {self._alert_count}건",
+            "",
+            tail,
+        ])
+
+        for chat_id in self.chat_ids:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=msg,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    disable_web_page_preview=True,
+                )
+            except Exception as e:
+                logger.warning(f"하트비트 전송 실패 ({chat_id}): {e}")
+
     def _build_keyboard(self, watcher: dict, link: str = "") -> InlineKeyboardMarkup | None:
         """
         watcher 설정의 open_mode에 따라 인라인 키보드를 생성합니다.
@@ -249,7 +303,12 @@ class MovieClubBot:
         except Exception as e:
             logger.error(f"[{name}] 크롤링 실패: {e}")
             result_info["error"] = str(e)
+            self._last_error = str(e)
             return result_info
+
+        self._last_check_at = datetime.now()
+        self._last_error = None
+        self._check_count += 1
 
         raw_data = result.get("raw_data", "")
         if not raw_data:
@@ -313,6 +372,7 @@ class MovieClubBot:
         if msg:
             result_info["msg"] = msg
             result_info["keyboard"] = self._build_keyboard(watcher, link)
+            self._alert_count += 1
 
             if send_alert:
                 await self._send_alert(msg, context, result_info["keyboard"])
@@ -673,6 +733,21 @@ class MovieClubBot:
                 data={"watcher": watcher},
             )
             logger.info(f"스케줄 등록: [{name}] 매 {watcher.get('interval_minutes', 5)}분")
+
+        # 하트비트 스케줄 등록
+        hb = self.advanced.get("heartbeat", {})
+        if hb.get("enabled") and self.chat_ids:
+            from datetime import time as dt_time
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo(hb.get("timezone", "Asia/Seoul"))
+            except Exception:
+                tz = None  # tzdata가 없으면 서버 로컬 시각 기준
+
+            hh, _, mm = hb.get("time", "09:00").partition(":")
+            at = dt_time(int(hh), int(mm or 0), tzinfo=tz)
+            job_queue.run_daily(self._send_heartbeat, time=at, name="heartbeat")
+            logger.info(f"하트비트 등록: 매일 {at.strftime('%H:%M')} ({tz or '로컬'})")
 
         # 사용자 추가 watcher 스케줄 등록
         for chat_id, watchers in self._user_watchers.items():
