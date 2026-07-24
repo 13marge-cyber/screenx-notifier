@@ -69,8 +69,10 @@ jobs:
           if git diff --staged --quiet; then
             echo "상태 변화 없음 - 커밋 생략"
           else
-            git pull --rebase --quiet || true
+            # 커밋을 먼저 해야 합니다. 스테이징된 변경이 남은 채로
+            # pull --rebase를 하면 "index contains uncommitted changes"로 실패합니다.
             git commit -m "chore: 감지 상태 갱신"
+            git pull --rebase --quiet || true
             git push
           fi
 
