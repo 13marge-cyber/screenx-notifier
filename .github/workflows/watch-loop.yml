@@ -7,10 +7,9 @@ name: ScreenX 1분 감시 루프
 on:
   workflow_dispatch:
   schedule:
-    # 재실행 체인이 끊겼을 때만 되살리는 안전망입니다.
-    # 평소에는 재실행 체인(PAT)이 주 경로라 자주 깨울 필요가 없습니다.
-    # 하루 두 번(00:11 / 12:11 KST)이면 체인이 끊겨도 반나절 안에 복구됩니다.
-    - cron: "11 3,15 * * *"
+    # 재실행 체인이 끊겼을 때 되살리는 안전망입니다.
+    # 이것마저 지연되므로 여러 시각에 걸어 확률을 높입니다.
+    - cron: "11 */2 * * *"
 
 permissions:
   contents: write     # 감지 상태 커밋
@@ -30,43 +29,18 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - name: 중복 실행 방지 (cron 안전망용)
-        # cron이 깨어났는데 이미 감시가 돌고 있으면, 대기하다 취소되면서
-        # "All jobs were cancelled" 메일을 만듭니다. 그 전에 스스로 조용히
-        # 정상 종료시켜 소음을 없앱니다. (dispatch 체인은 이 검사를 건너뜀)
-        id: guard
-        if: github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          others=$(gh run list --repo "${{ github.repository }}" \
-            --workflow watch-loop.yml --status in_progress \
-            --json databaseId \
-            --jq "[.[].databaseId] | map(select(. != ${{ github.run_id }})) | length")
-          if [ "${others:-0}" -gt 0 ]; then
-            echo "이미 감시 실행 중 - 이 cron 실행은 조용히 종료합니다."
-            echo "skip=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "감시 중인 실행 없음 - 안전망이 이어받습니다."
-            echo "skip=0" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/checkout@v4
 
-      - if: steps.guard.outputs.skip != '1'
-        uses: actions/checkout@v4
-
-      - if: steps.guard.outputs.skip != '1'
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: 의존성 설치
-        if: steps.guard.outputs.skip != '1'
         # CGV는 JSON API로 조회하므로 Selenium/Chrome이 필요 없습니다.
         run: pip install --quiet "python-telegram-bot[job-queue]>=22.0" pyyaml requests beautifulsoup4
 
       - name: 사전 점검 (CGV 도달 확인)
-        if: steps.guard.outputs.skip != '1'
         # 러너 IP가 차단되면 조회가 전부 실패합니다. 이 경우 즉시 실패시켜
         # '감시 중인데 아무것도 못 보는' 상태로 5시간을 낭비하지 않게 합니다.
         env:
@@ -75,7 +49,6 @@ jobs:
         run: python main.py --check --config config.loop.yaml
 
       - name: 1분 간격 감시 (320분)
-        if: steps.guard.outputs.skip != '1'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
@@ -87,8 +60,7 @@ jobs:
           echo "감시 구간 종료"
 
       - name: 감지 상태 저장
-        # 취소된 경우(다른 실행에 밀림)엔 실행하지 않습니다. 이미 도는 쪽이 저장합니다.
-        if: ${{ !cancelled() && steps.guard.outputs.skip != '1' }}
+        if: always()
         # 상태가 안 남으면 다음 실행이 기준선을 다시 잡습니다.
         run: |
           git config user.name "github-actions[bot]"
@@ -105,10 +77,7 @@ jobs:
           fi
 
       - name: 다음 실행 이어붙이기
-        # 취소된 실행(다른 실행에 밀림)은 재실행을 만들지 않습니다.
-        # 그러지 않으면 취소가 새 실행을 낳고, 그게 또 밀려 취소되는 연쇄가 생깁니다.
-        # 정상 종료·타임아웃·오류로 끝났을 때만 다음 실행을 이어붙입니다.
-        if: ${{ !cancelled() && steps.guard.outputs.skip != '1' }}
+        if: always()
         # GITHUB_TOKEN으로 트리거한 이벤트는 새 워크플로 실행을 만들지 못합니다.
         # 따라서 체인을 이으려면 PAT(WORKFLOW_PAT)가 필요합니다.
         # 없으면 위의 cron 안전망에 의존합니다(간격이 들쭉날쭉해집니다).
