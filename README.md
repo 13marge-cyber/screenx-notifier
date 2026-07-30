@@ -142,6 +142,71 @@ journalctl -u screenx-notifier -f
 
 ---
 
+## 🔄 다른 영화 / 상영관으로 다시 쓰기
+
+극장 코드나 상영관 이름을 찾을 필요 없이, 마법사가 CGV에서 실제 목록을
+가져와 고르게 해줍니다.
+
+```bash
+python setup_watch.py            # 대화형 설정 (config.yaml 생성)
+python setup_watch.py --loop     # GitHub Actions용 config.loop.yaml도 함께
+python setup_watch.py --list-movies   # 현재 상영작만 확인
+```
+
+물어보는 것은 다섯 가지뿐입니다 — 영화 / 극장 / 상영관 / 날짜 / 주기.
+설정을 만들기 전에 **각 날짜가 이미 열렸는지 진단**해서 알려줍니다.
+
+```
+  ⚠️  이미 예매가 열린 날짜: 2026-08-10 (13회)
+      → 이 날짜들은 기준선에 포함되어 알림이 오지 않습니다.
+  ✅ 아직 안 열린 날짜: 4개 → 열리는 즉시 알림
+```
+
+이미 열린 날짜만 넣으면 알림이 올 수 없기 때문에, 시작 전에 확인시켜 줍니다.
+
+### GitHub Actions로 다시 감시하기
+
+맥북을 켜두지 않고 감시하려면 Actions 루프를 씁니다.
+(감시가 끝나면 워크플로를 비활성화해 두는 것이 기본입니다.)
+
+```bash
+# 1. 새 설정 만들기
+python setup_watch.py --loop
+
+# 2. 커밋 & 푸시
+git add config.loop.yaml && git commit -m "chore: 새 감시 대상 설정" && git push
+
+# 3. 워크플로 다시 켜기
+gh workflow enable watch-loop.yml --repo <사용자>/<리포>
+
+# 4. 감시 시작
+gh workflow run watch-loop.yml --repo <사용자>/<리포>
+```
+
+끝낼 때는 `gh workflow disable watch-loop.yml --repo <사용자>/<리포>`.
+
+필요한 Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`,
+그리고 자동 재실행 체인을 위한 `WORKFLOW_PAT`(Actions: Read and write 권한).
+
+> **주의**: 상태 파일(`data/actions-state`)이 커밋되지 않으면, 실행이
+> 교체될 때 기준선이 어긋나 알림이 누락될 수 있습니다. 감시 중에
+> `chore: 감지 상태 갱신` 커밋이 주기적으로 올라오는지 확인하세요.
+
+### ⚠️ 감지가 느려지는 함정: `priority_dates`
+
+`priority_dates`에 넣은 날짜는 **매 사이클** 확인하지만, 나머지
+`watch_dates`는 `full_scan_every` 사이클에 한 번만 봅니다.
+CGV 요청량을 줄이려는 옵션인데, **정작 예매가 열린 날짜가
+`priority_dates`에 없으면 그만큼 알림이 늦습니다.**
+
+> 실제 사례: 1분 감시로 설정했지만 `priority_dates`가 특정 하루뿐이라,
+> 다른 날짜가 열렸을 때 실효 감지 주기가 5분이 되었습니다.
+
+날짜가 20개 이하라면 **`priority_dates`를 비우고 `full_scan_every: 1`**로
+두세요. 마법사는 기본으로 그렇게 설정합니다.
+
+---
+
 ## ⚙️ 설정 가이드
 
 `config.yaml` 파일 하나로 모든 것을 제어합니다:

@@ -192,7 +192,15 @@ class CGVCrawler:
     # ── 공개 인터페이스 ────────────────────────────────────────
 
     def target_dates(self) -> list[str]:
-        """이번 사이클에 조회할 날짜를 결정합니다."""
+        """
+        이번 사이클에 조회할 날짜를 결정합니다.
+
+        주의: priority_dates를 쓰면 그 날짜만 매 사이클 확인하고
+        나머지는 full_scan_every 사이클에 한 번만 봅니다. 감시 대상 날짜가
+        priority에 없으면 실효 감지 주기가 그만큼 느려집니다.
+        (실제로 이것 때문에 1분 감시가 5분처럼 동작한 적이 있습니다)
+        날짜가 몇 개 안 되면 priority_dates를 비워 전체를 매번 보세요.
+        """
         self._cycle += 1
         full_scan = (self._cycle % self.full_scan_every == 1) or not self.priority_dates
 
