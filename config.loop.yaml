@@ -1,3 +1,31 @@
+# GitHub Actions 상시 감시 설정
+# 비밀값은 GitHub Secrets에서 환경변수로 주입됩니다.
+
+telegram:
+  bot_token: "SET_VIA_ENV"
+  chat_ids: []
+  language: "ko"
+
+watchers:
+  # 용산아이파크몰 4면 SCREENX - 8월 8일
+  - name: "CGV 용산 4면 SCREENX 스파이더맨 8월 8일"
+    type: "cgv"
+    enabled: true
+    interval_minutes: 1
+    settings:
+      theater_code: "0013"
+      hall_keywords:
+        - "PRIVATE BOX"
+      movie_keywords:
+        - "스파이더맨"
+      priority_dates: []
+      watch_dates:
+        - "2026-08-08"
+      full_scan_every: 1
+      request_delay: 0.3
+      open_mode: "web"
+      web_url: "https://cgv.co.kr/mem/login?returnUrl=%2Fcnm%2FmovieBook%2Fcinema"
+
   # 영등포 SCREENX - 8월 10일
   - name: "CGV 영등포 SCREENX 스파이더맨 8월 10일"
     type: "cgv"
@@ -16,3 +44,14 @@
       request_delay: 0.3
       open_mode: "web"
       web_url: "https://cgv.co.kr/mem/login?returnUrl=%2Fcnm%2FmovieBook%2Fcinema"
+
+advanced:
+  heartbeat:
+    enabled: true
+    time: "09:00"
+    timezone: "Asia/Seoul"
+
+  state_dir: "./data/actions-state"
+  log_level: "INFO"
+  max_retries: 3
+  cooldown_minutes: 60
