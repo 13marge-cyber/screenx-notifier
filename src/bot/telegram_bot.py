@@ -137,20 +137,51 @@ class MovieClubBot:
         text: str,
         context: ContextTypes.DEFAULT_TYPE,
         keyboard: InlineKeyboardMarkup | None = None,
-    ):
-        """등록된 모든 채팅방에 알림을 전송합니다."""
+    ) -> bool:
+        """
+        등록된 모든 채팅방에 알림을 전송합니다.
+
+        전송이 실패하면 10초 간격으로 최대 3회 시도합니다.
+        각 회차에서는 MarkdownV2 전송 후 일반 텍스트 전송도 시도합니다.
+        모든 채팅방 전송이 성공하면 True를 반환합니다.
+        최종 실패하면 False를 반환하여 상태 저장을 보류하고,
+        다음 1분 감시 주기에도 다시 알림을 시도하게 합니다.
+        """
+        if not self.chat_ids:
+            logger.error("알림 전송 실패: 등록된 chat_id가 없습니다.")
+            return False
+
+        max_attempts = 3
+        retry_delay_seconds = 10
+        all_sent = True
+
         for chat_id in self.chat_ids:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    disable_web_page_preview=True,
-                    reply_markup=keyboard,
-                )
-            except Exception as e:
-                logger.error(f"알림 전송 실패 (chat_id={chat_id}): {e}")
-                # MarkdownV2 파싱 실패 시 일반 텍스트로 재시도
+            sent = False
+
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        disable_web_page_preview=True,
+                        reply_markup=keyboard,
+                    )
+                    sent = True
+                    if attempt > 1:
+                        logger.info(
+                            f"알림 재전송 성공 "
+                            f"(chat_id={chat_id}, 시도={attempt}/{max_attempts})"
+                        )
+                    break
+                except Exception as e:
+                    logger.error(
+                        f"알림 전송 실패 "
+                        f"(chat_id={chat_id}, 시도={attempt}/{max_attempts}): {e}"
+                    )
+
+                # MarkdownV2 파싱 오류 또는 일시 장애에 대비해
+                # 같은 회차에서 일반 텍스트로 즉시 다시 시도합니다.
                 try:
                     plain = text
                     for ch in r"\_*[]()~`>#+-=|{}.!":
@@ -160,8 +191,33 @@ class MovieClubBot:
                         text=plain,
                         reply_markup=keyboard,
                     )
+                    sent = True
+                    logger.info(
+                        f"일반 텍스트 전송 성공 "
+                        f"(chat_id={chat_id}, 시도={attempt}/{max_attempts})"
+                    )
+                    break
                 except Exception as e2:
-                    logger.error(f"일반 텍스트 전송도 실패: {e2}")
+                    logger.error(
+                        f"일반 텍스트 전송도 실패 "
+                        f"(chat_id={chat_id}, 시도={attempt}/{max_attempts}): {e2}"
+                    )
+
+                if attempt < max_attempts:
+                    logger.warning(
+                        f"알림을 {retry_delay_seconds}초 뒤 다시 시도합니다 "
+                        f"(chat_id={chat_id}, 다음 시도={attempt + 1}/{max_attempts})"
+                    )
+                    await asyncio.sleep(retry_delay_seconds)
+
+            if not sent:
+                all_sent = False
+                logger.error(
+                    f"알림 최종 실패 "
+                    f"(chat_id={chat_id}, 총 {max_attempts}회 시도)"
+                )
+
+        return all_sent
 
     async def _send_heartbeat(self, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -327,13 +383,16 @@ class MovieClubBot:
         logger.info(f"[{name}] 변경 감지!")
         result_info["changed"] = True
 
-        # 알림 메시지 생성
+        # 알림 메시지와 전송 성공 후 저장할 상태를 준비합니다.
         link = ""
+        next_state: dict[str, Any] | None = None
+
         if wtype == "cgv":
             from src.crawlers.cgv import showtime_key
 
             schedules = result.get("schedules", [])
             known = set(old_state.get("keys", []))
+
             if old_state.get("initialized"):
                 # 이미 알고 있던 회차는 제외하고 새로 생긴 것만 알립니다.
                 new_items = [
@@ -348,38 +407,56 @@ class MovieClubBot:
 
             msg = crawler.format_message(new_items) if new_items else None
 
-            # 우선 날짜만 훑은 사이클이 전체 목록을 지우지 않도록 합집합으로 누적
-            state = self.state_mgr.get_state(name)
-            state["keys"] = sorted(known | set(result.get("keys", [])))
-            state["initialized"] = True
-            self.state_mgr.save_state(name, state)
+            # 아직 파일에 저장하지 않고 메모리에만 다음 상태를 준비합니다.
+            next_state = dict(old_state)
+            next_state["keys"] = sorted(known | set(result.get("keys", [])))
+            next_state["initialized"] = True
+
         elif wtype == "webpage":
             items = result.get("items", [])
-            old_state = self.state_mgr.get_state(name)
             old_titles = set(old_state.get("titles", []))
             new_items = [i for i in items if i["title"] not in old_titles]
+
             if new_items:
                 msg = crawler.format_message(name, new_items)
-                link = new_items[0].get("link", "") if new_items else ""
+                link = new_items[0].get("link", "")
             else:
                 msg = None
 
-            state = self.state_mgr.get_state(name)
-            state["titles"] = [i["title"] for i in items]
-            self.state_mgr.save_state(name, state)
+            next_state = dict(old_state)
+            next_state["titles"] = [i["title"] for i in items]
+
         else:
             msg = None
-
-        # 상태 업데이트
-        self.state_mgr.update_hash(name, raw_data)
 
         if msg:
             result_info["msg"] = msg
             result_info["keyboard"] = self._build_keyboard(watcher, link)
+
+            # 실제 알림이 필요한 경우, 전송 성공을 먼저 확인합니다.
+            if send_alert:
+                sent = await self._send_alert(
+                    msg,
+                    context,
+                    result_info["keyboard"],
+                )
+                if not sent:
+                    error_msg = (
+                        "텔레그램 알림 전송 실패: 상태를 저장하지 않았으며 "
+                        "다음 감시 주기에 자동 재시도합니다."
+                    )
+                    logger.error(f"[{name}] {error_msg}")
+                    result_info["error"] = error_msg
+                    self._last_error = error_msg
+                    return result_info
+
+            # 전송 성공 또는 의도적으로 전송하지 않는 실행에서만 알림 수 증가
             self._alert_count += 1
 
-            if send_alert:
-                await self._send_alert(msg, context, result_info["keyboard"])
+        # 알림이 필요 없었거나, 필요한 알림 전송이 성공한 뒤에만 상태를 확정합니다.
+        if next_state is not None:
+            self.state_mgr.save_state(name, next_state)
+        self.state_mgr.update_hash(name, raw_data)
 
         return result_info
 
