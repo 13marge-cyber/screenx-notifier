@@ -15,7 +15,6 @@ import logging
 
 from src.config import load_config, get_enabled_watchers
 
-
 def setup_logging(level: str = "INFO"):
     """로깅 설정"""
     logging.basicConfig(
@@ -31,7 +30,6 @@ def run_bot(config: dict, polling: bool = True):
 
     bot = MovieClubBot(config)
     bot.run(polling=polling)
-
 
 def run_once(config: dict):
     """
@@ -50,13 +48,11 @@ def run_once(config: dict):
         """job_queue 컨텍스트 대신 bot 핸들만 전달하는 최소 어댑터"""
         def __init__(self, tg_bot):
             self.bot = tg_bot
-
     async def _main():
         tg_bot = Bot(config["telegram"]["bot_token"])
         ctx = _Context(tg_bot)
         alerted = 0
         failed = 0
-
         async with tg_bot:
             for watcher in bot._get_all_watchers():
                 name = watcher["name"]
@@ -70,7 +66,6 @@ def run_once(config: dict):
                 else:
                     logging.info(f"[{name}] 변경 없음")
         return alerted, failed
-
     count, failed = asyncio.run(_main())
     print(f"확인 완료. 알림 {count}건 전송.")
 
@@ -85,7 +80,6 @@ def run_check(config: dict):
     from src.state import StateManager
     from src.crawlers.cgv import CGVCrawler
     from src.crawlers.webpage import WebpageCrawler
-
     advanced = config.get("advanced", {})
     state_dir = advanced.get("state_dir", "./data/state")
     state_mgr = StateManager(state_dir)
@@ -102,7 +96,6 @@ def run_check(config: dict):
         name = watcher["name"]
         wtype = watcher["type"]
         settings = watcher.get("settings", {})
-
         print(f"[{name}] 확인 중...")
 
         if wtype == "cgv":
@@ -119,10 +112,8 @@ def run_check(config: dict):
             print(f"  ❌ 크롤링 실패: {e}")
             failures += 1
             continue
-
         raw_data = result.get("raw_data", "")
         changed = state_mgr.has_changed(name, raw_data) if raw_data else False
-
         if wtype == "cgv":
             schedules = result.get("schedules", [])
             print(f"  📋 발견된 상영 일정: {len(schedules)}개")
@@ -139,13 +130,10 @@ def run_check(config: dict):
                 print(f"    - {item['title'][:60]}")
             if len(items) > 5:
                 print(f"    ... 외 {len(items) - 5}건")
-
         status = "🔔 변경 감지!" if changed else "✅ 변경 없음"
         print(f"  {status}")
 
-        # 상태 저장 (다음 실행 시 비교 기준)
-        if raw_data:
-            state_mgr.update_hash(name, raw_data)
+        # 사전 점검은 조회만 하고 감지 상태를 변경하지 않습니다.
         print()
 
     print("확인 완료.")
@@ -155,7 +143,6 @@ def run_check(config: dict):
     if failures:
         print(f"!! {failures}개 watcher가 실패했습니다.")
         sys.exit(1)
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -186,7 +173,6 @@ def main():
         ),
     )
     args = parser.parse_args()
-
     config = load_config(args.config)
 
     log_level = config.get("advanced", {}).get("log_level", "INFO")
