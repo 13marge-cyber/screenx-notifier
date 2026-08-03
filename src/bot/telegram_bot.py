@@ -316,7 +316,11 @@ class MovieClubBot:
             return result_info
 
         # 변경 감지
-        if not self.state_mgr.has_changed(name, raw_data):
+        old_state = self.state_mgr.get_state(name)
+        first_cgv_run = wtype == "cgv" and not old_state.get("initialized")
+
+        # 사전 점검이 hash만 저장했더라도 CGV 최초 실행은 반드시 처리합니다.
+        if not first_cgv_run and not self.state_mgr.has_changed(name, raw_data):
             logger.debug(f"[{name}] 변경 없음")
             return result_info
 
@@ -329,18 +333,18 @@ class MovieClubBot:
             from src.crawlers.cgv import showtime_key
 
             schedules = result.get("schedules", [])
-            old_state = self.state_mgr.get_state(name)
             known = set(old_state.get("keys", []))
-
             if old_state.get("initialized"):
                 # 이미 알고 있던 회차는 제외하고 새로 생긴 것만 알립니다.
                 new_items = [
                     s for s in schedules if showtime_key(s) not in known
                 ]
             else:
-                # 첫 실행은 기준선만 잡고 알리지 않습니다.
-                new_items = []
-                logger.info(f"[{name}] 첫 실행: 현재 {len(schedules)}건을 기준선으로 저장")
+                # 최초 실행에서 이미 열린 회차가 있으면 모두 알립니다.
+                new_items = schedules
+                logger.info(
+                    f"[{name}] 최초 실행: 현재 {len(schedules)}건을 새 회차로 알림"
+                )
 
             msg = crawler.format_message(new_items) if new_items else None
 
