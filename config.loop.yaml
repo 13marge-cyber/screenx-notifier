@@ -7,8 +7,8 @@ telegram:
   language: "ko"
 
 watchers:
-  # 용산아이파크몰 4면 SCREENX - 8월 8일
-  - name: "CGV 용산 4면 SCREENX 스파이더맨 8월 8일"
+  # 용산아이파크몰 4면 SCREENX
+  - name: "CGV 용산 4면 SCREENX 스파이더맨 지정일"
     type: "cgv"
     enabled: true
     interval_minutes: 1
@@ -20,14 +20,20 @@ watchers:
         - "스파이더맨"
       priority_dates: []
       watch_dates:
-        - "2026-08-08"
+        - "2026-08-10"
+        - "2026-08-13"
+        - "2026-08-14"
+        - "2026-08-18"
+        - "2026-08-21"
+        - "2026-08-22"
+        - "2026-08-23"
       full_scan_every: 1
       request_delay: 0.3
       open_mode: "web"
       web_url: "https://cgv.co.kr/mem/login?returnUrl=%2Fcnm%2FmovieBook%2Fcinema"
 
-  # 영등포 SCREENX - 8월 10일
-  - name: "CGV 영등포 SCREENX 스파이더맨 8월 10일"
+  # 영등포 SCREENX
+  - name: "CGV 영등포 SCREENX 스파이더맨 지정일"
     type: "cgv"
     enabled: true
     interval_minutes: 1
@@ -39,7 +45,12 @@ watchers:
         - "스파이더맨"
       priority_dates: []
       watch_dates:
-        - "2026-08-10"
+        - "2026-08-13"
+        - "2026-08-14"
+        - "2026-08-18"
+        - "2026-08-21"
+        - "2026-08-22"
+        - "2026-08-23"
       full_scan_every: 1
       request_delay: 0.3
       open_mode: "web"
