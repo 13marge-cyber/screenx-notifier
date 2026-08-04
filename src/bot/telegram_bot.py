@@ -137,12 +137,14 @@ class MovieClubBot:
         text: str,
         context: ContextTypes.DEFAULT_TYPE,
         keyboard: InlineKeyboardMarkup | None = None,
+        rich_message: dict | None = None,
     ) -> bool:
         """
         등록된 모든 채팅방에 알림을 전송합니다.
 
         전송이 실패하면 10초 간격으로 최대 3회 시도합니다.
-        각 회차에서는 MarkdownV2 전송 후 일반 텍스트 전송도 시도합니다.
+        CGV 알림은 Rich Message를 먼저 보내고, 실패하면 같은 회차에서
+        MarkdownV2와 일반 텍스트 순서로 즉시 대체 전송합니다.
         모든 채팅방 전송이 성공하면 True를 반환합니다.
         최종 실패하면 False를 반환하여 상태 저장을 보류하고,
         다음 1분 감시 주기에도 다시 알림을 시도하게 합니다.
@@ -159,6 +161,34 @@ class MovieClubBot:
             sent = False
 
             for attempt in range(1, max_attempts + 1):
+                # Telegram Bot API의 Rich Message를 먼저 시도합니다.
+                # 현재 python-telegram-bot에 전용 메서드가 없어
+                # do_api_request로 새 Bot API 엔드포인트를 직접 호출합니다.
+                if rich_message:
+                    try:
+                        await context.bot.do_api_request(
+                            endpoint="sendRichMessage",
+                            api_kwargs={
+                                "chat_id": chat_id,
+                                "rich_message": rich_message,
+                            },
+                        )
+                        sent = True
+                        if attempt > 1:
+                            logger.info(
+                                f"Rich Message 재전송 성공 "
+                                f"(chat_id={chat_id}, "
+                                f"시도={attempt}/{max_attempts})"
+                            )
+                        break
+                    except Exception as rich_error:
+                        logger.warning(
+                            f"Rich Message 전송 실패, 일반 메시지로 대체 "
+                            f"(chat_id={chat_id}, "
+                            f"시도={attempt}/{max_attempts}): "
+                            f"{rich_error}"
+                        )
+
                 try:
                     await context.bot.send_message(
                         chat_id=chat_id,
@@ -385,6 +415,7 @@ class MovieClubBot:
 
         # 알림 메시지와 전송 성공 후 저장할 상태를 준비합니다.
         link = ""
+        rich_message: dict | None = None
         next_state: dict[str, Any] | None = None
 
         if wtype == "cgv":
@@ -406,6 +437,11 @@ class MovieClubBot:
                 )
 
             msg = crawler.format_message(new_items) if new_items else None
+            rich_message = (
+                crawler.format_rich_message(new_items)
+                if new_items
+                else None
+            )
 
             # 아직 파일에 저장하지 않고 메모리에만 다음 상태를 준비합니다.
             next_state = dict(old_state)
@@ -439,6 +475,7 @@ class MovieClubBot:
                     msg,
                     context,
                     result_info["keyboard"],
+                    rich_message=rich_message,
                 )
                 if not sent:
                     error_msg = (
