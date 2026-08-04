@@ -7,13 +7,15 @@ telegram:
   language: "ko"
 
 watchers:
-  # 용산아이파크몰 4면 SCREENX
+  # 용산아이파크몰 4면 SCREENX - 스파이더맨
   - name: "CGV 용산 4면 SCREENX 스파이더맨 지정일"
     type: "cgv"
     enabled: true
     interval_minutes: 1
     settings:
       theater_code: "0013"
+      theater_name: "용산아이파크몰"
+      alert_title: "용산CGV"
       hall_keywords:
         - "PRIVATE BOX"
       movie_keywords:
@@ -29,16 +31,17 @@ watchers:
         - "2026-08-23"
       full_scan_every: 1
       request_delay: 0.3
-      open_mode: "web"
-      web_url: "https://cgv.co.kr/mem/login?returnUrl=%2Fcnm%2FmovieBook%2Fcinema"
+      open_mode: "none"
 
-  # 영등포 SCREENX
+  # 영등포 SCREENX - 스파이더맨
   - name: "CGV 영등포 SCREENX 스파이더맨 지정일"
     type: "cgv"
     enabled: true
     interval_minutes: 1
     settings:
       theater_code: "0059"
+      theater_name: "영등포"
+      alert_title: "영등포CGV"
       hall_keywords:
         - "SCREENX"
       movie_keywords:
@@ -53,8 +56,30 @@ watchers:
         - "2026-08-23"
       full_scan_every: 1
       request_delay: 0.3
-      open_mode: "web"
-      web_url: "https://cgv.co.kr/mem/login?returnUrl=%2Fcnm%2FmovieBook%2Fcinema"
+      open_mode: "none"
+
+  # 용산아이파크몰 IMAX - 오디세이
+  - name: "CGV 용산 IMAX 오디세이 지정일"
+    type: "cgv"
+    enabled: true
+    interval_minutes: 1
+    settings:
+      theater_code: "0013"
+      theater_name: "용산아이파크몰"
+      alert_title: "용산CGV"
+      hall_keywords:
+        - "IMAX"
+        - "아이맥스"
+      movie_keywords:
+        - "오디세이"
+      priority_dates: []
+      watch_dates:
+        - "2026-08-21"
+        - "2026-08-22"
+        - "2026-08-23"
+      full_scan_every: 1
+      request_delay: 0.3
+      open_mode: "none"
 
 advanced:
   heartbeat:
