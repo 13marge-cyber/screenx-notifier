@@ -79,6 +79,21 @@ class CGVCrawler:
         self.site_no = str(settings.get("theater_code", "0013"))
         self.co_cd = settings.get("co_cd", "A420")
 
+        default_theater_name = next(
+            (
+                name
+                for name, code in THEATER_CODES.items()
+                if code == self.site_no
+            ),
+            self.site_no,
+        )
+        self.theater_name = str(
+            settings.get("theater_name") or default_theater_name
+        )
+        self.alert_title = str(
+            settings.get("alert_title") or f"{self.theater_name}CGV"
+        )
+
         self.hall_keywords = [
             kw.upper() for kw in settings.get("hall_keywords", ["IMAX"])
         ]
@@ -271,35 +286,97 @@ class CGVCrawler:
         except Exception:
             pass
 
+    def _group_schedules(self, schedules: list[dict]):
+        """날짜·영화·상영관별로 회차를 묶어 정렬합니다."""
+        by_date_movie = defaultdict(list)
+        for item in schedules:
+            key = (item["date"], item["movie"], item["hall"])
+            by_date_movie[key].append(item)
+
+        grouped = []
+        for (date, movie, hall), items in sorted(by_date_movie.items()):
+            items.sort(key=lambda x: x["start"])
+            grouped.append(
+                {
+                    "date": date,
+                    "movie": movie,
+                    "hall": hall,
+                    "times": ", ".join(i["start"] for i in items),
+                }
+            )
+        return grouped
+
     def format_message(self, schedules: list[dict]) -> str:
-        """알림 메시지를 포맷팅합니다 (Telegram MarkdownV2)."""
+        """Rich Message 실패 시 사용할 Telegram MarkdownV2 알림입니다."""
         if not schedules:
             return ""
 
         now_str = _esc(datetime.now().strftime("%Y-%m-%d %H:%M"))
+        title = _esc(self.alert_title)
         lines = [
-            "🚨 *CGV 새 상영 일정 오픈\\!*",
+            f"🚨 *NEW · {title}*",
+            "새 상영 일정 오픈",
             f"⏰ 감지 시각: {now_str}",
             "━━━━━━━━━━━━━━━━━━━━",
             "",
         ]
 
-        by_date_movie = defaultdict(list)
-        for item in schedules:
-            by_date_movie[(item["date"], item["movie"], item["hall"])].append(item)
-
-        for (date, movie, hall), items in sorted(by_date_movie.items()):
-            items.sort(key=lambda x: x["start"])
-            times_str = ", ".join(i["start"] for i in items)
-            lines.append(f"📅 *{_esc(date)}*")
-            lines.append(f"  🎥 {_esc(movie)}")
-            lines.append(f"  🏛 {_esc(hall)}")
-            lines.append(f"  ⏰ {_esc(times_str)}")
+        for group in self._group_schedules(schedules):
+            lines.append(f"📅 *{_esc(group['date'])}*")
+            lines.append(f"  🎥 {_esc(group['movie'])}")
+            lines.append(f"  🏛 {_esc(group['hall'])}")
+            lines.append(f"  ⏰ {_esc(group['times'])}")
             lines.append("")
 
         lines.append("━━━━━━━━━━━━━━━━━━━━")
-        lines.append("👇 *아래 버튼을 눌러 바로 예매하세요\\!*")
         return "\n".join(lines)
+
+    def format_rich_message(self, schedules: list[dict]) -> dict | None:
+        """
+        Telegram Bot API sendRichMessage용 구조화 메시지입니다.
+
+        첫 줄만 가장 큰 제목(size=1)으로 표시하고,
+        나머지는 일반 본문과 구분선으로 구성합니다.
+        """
+        if not schedules:
+            return None
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        blocks: list[dict] = [
+            {
+                "type": "heading",
+                "text": f"🚨 NEW · {self.alert_title}",
+                "size": 1,
+            },
+            {
+                "type": "paragraph",
+                "text": (
+                    "새 상영 일정 오픈\n"
+                    f"⏰ 감지 시각: {now_str}"
+                ),
+            },
+            {"type": "divider"},
+        ]
+
+        for group in self._group_schedules(schedules):
+            blocks.append(
+                {
+                    "type": "paragraph",
+                    "text": (
+                        f"📅 {group['date']}\n"
+                        f"🎥 {group['movie']}\n"
+                        f"🏛 {group['hall']}\n"
+                        f"⏰ {group['times']}"
+                    ),
+                }
+            )
+
+        blocks.append({"type": "divider"})
+        return {
+            "blocks": blocks,
+            "skip_entity_detection": True,
+        }
+
 
 
 def showtime_key(item: dict) -> str:
