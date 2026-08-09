@@ -1,0 +1,30 @@
+name: ScreenX v4 실연결 자체진단
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: 최신 main 체크아웃
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+      - name: Python 3.11.15 준비
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11.15'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: 의존성 설치
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: 실제 Telegram + CGV + 가짜 오픈 E2E 자체진단
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
+        run: python main.py --config config.loop.yaml selftest

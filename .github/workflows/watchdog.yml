@@ -1,0 +1,70 @@
+name: ScreenX v4 Watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 정각 혼잡을 피하고 10분 간격으로 main 감시 체인만 확인합니다.
+    - cron: '3,13,23,33,43,53 * * * *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: screenx-watchdog-main
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: main 감시 실행/후속 대기 확인 및 복구
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow watch-loop.yml \
+            --branch main \
+            --limit 20 \
+            --json status,conclusion,createdAt)
+
+          running=$(printf '%s' "$runs" | jq '[.[] | select(.status == "in_progress")] | length')
+          waiting=$(printf '%s' "$runs" | jq '[.[] | select(.status == "queued" or .status == "pending" or .status == "waiting" or .status == "requested")] | length')
+          echo "main 실행 중: ${running}개 / 대기 중: ${waiting}개"
+
+          if [ "$waiting" -gt 0 ]; then
+            echo "후속 실행이 이미 대기 중 - 아무 작업도 하지 않음"
+            exit 0
+          fi
+
+          if [ "$running" -gt 0 ]; then
+            echo "실행 중인 감시는 있으나 후속 대기가 없음 → 후속 실행 생성"
+            gh workflow run watch-loop.yml --repo "${{ github.repository }}" --ref main
+            exit 0
+          fi
+
+          latest_status=$(printf '%s' "$runs" | jq -r '.[0].status // ""')
+          latest_conclusion=$(printf '%s' "$runs" | jq -r '.[0].conclusion // ""')
+          latest_created=$(printf '%s' "$runs" | jq -r '.[0].createdAt // ""')
+
+          # A manual cancellation is treated as an intentional stop. Watchdog must not resurrect it.
+          if [ "$latest_status" = "completed" ] && [ "$latest_conclusion" = "cancelled" ]; then
+            echo "가장 최근 main 감시가 취소됨 - 수동 중지로 간주하여 자동 재시작하지 않음"
+            exit 0
+          fi
+
+          # Permanent preflight/config/state failures should not burn Actions every 10 minutes.
+          if [ "$latest_status" = "completed" ] && [ "$latest_conclusion" = "failure" ] && [ -n "$latest_created" ]; then
+            created_epoch=$(date -u -d "$latest_created" +%s 2>/dev/null || echo 0)
+            now_epoch=$(date -u +%s)
+            age=$((now_epoch - created_epoch))
+            if [ "$created_epoch" -gt 0 ] && [ "$age" -lt 3600 ]; then
+              echo "최근 실패 후 ${age}초 - 1시간 재시작 차단 구간이므로 대기"
+              exit 0
+            fi
+          fi
+
+          echo "main 감시 체인 완전 단절 → 새 실행 생성"
+          gh workflow run watch-loop.yml --repo "${{ github.repository }}" --ref main

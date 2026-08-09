@@ -1,93 +1,73 @@
-# GitHub Actions 상시 감시 설정
-# 비밀값은 GitHub Secrets에서 환경변수로 주입됩니다.
+# screenx-notifier v4.0.1
+# 모든 사용자 표시 시간은 코드에서 Asia/Seoul(KST)로 고정합니다.
+# Telegram 비밀값은 GitHub Secrets에서만 읽습니다.
+# 필요 Secret: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS (개인 chat id 정확히 1개)
 
-telegram:
-  bot_token: "SET_VIA_ENV"
-  chat_ids: []
-  language: "ko"
+telegram: {}
 
-watchers:
-  # 용산아이파크몰 4면 SCREENX - 스파이더맨
-  - name: "CGV 용산 4면 SCREENX 스파이더맨 지정일"
-    type: "cgv"
-    enabled: true
-    interval_minutes: 1
-    settings:
-      theater_code: "0013"
-      theater_name: "용산아이파크몰"
-      alert_title: "용산CGV"
-      hall_keywords:
-        - "PRIVATE BOX"
-      movie_keywords:
-        - "스파이더맨"
-      priority_dates: []
-      watch_dates:
-        - "2026-08-10"
-        - "2026-08-13"
-        - "2026-08-14"
-        - "2026-08-18"
-        - "2026-08-21"
-        - "2026-08-22"
-        - "2026-08-23"
-      full_scan_every: 1
-      request_delay: 0.3
-      open_mode: "none"
-
-  # 영등포 SCREENX - 스파이더맨
-  - name: "CGV 영등포 SCREENX 스파이더맨 지정일"
-    type: "cgv"
-    enabled: true
-    interval_minutes: 1
-    settings:
-      theater_code: "0059"
-      theater_name: "영등포"
-      alert_title: "영등포CGV"
-      hall_keywords:
-        - "SCREENX"
-      movie_keywords:
-        - "스파이더맨"
-      priority_dates: []
-      watch_dates:
-        - "2026-08-13"
-        - "2026-08-14"
-        - "2026-08-18"
-        - "2026-08-21"
-        - "2026-08-22"
-        - "2026-08-23"
-      full_scan_every: 1
-      request_delay: 0.3
-      open_mode: "none"
-
-  # 용산아이파크몰 IMAX - 오디세이
-  - name: "CGV 용산 IMAX 오디세이 지정일"
-    type: "cgv"
-    enabled: true
-    interval_minutes: 1
-    settings:
-      theater_code: "0013"
-      theater_name: "용산아이파크몰"
-      alert_title: "용산CGV"
-      hall_keywords:
-        - "IMAX"
-        - "아이맥스"
-      movie_keywords:
-        - "오디세이"
-      priority_dates: []
-      watch_dates:
-        - "2026-08-21"
-        - "2026-08-22"
-        - "2026-08-23"
-      full_scan_every: 1
-      request_delay: 0.3
-      open_mode: "none"
-
-advanced:
+monitor:
+  interval_seconds: 60
+  failure_alert_threshold: 3
+  state_dir: "./data/notifier-state"
+  # 기존 v3/r3 및 현재 main(v2) 상태를 첫 실행 때 읽어 known_keys를 자동 이관합니다.
+  # 원본 legacy 파일은 수정/삭제하지 않습니다.
+  legacy_state_dirs:
+    - "./data/v3-state"
+    - "./data/actions-state"
   heartbeat:
     enabled: true
     time: "09:00"
-    timezone: "Asia/Seoul"
 
-  state_dir: "./data/actions-state"
-  log_level: "INFO"
-  max_retries: 3
-  cooldown_minutes: 60
+cgv:
+  timeout_seconds: 6
+  request_delay_seconds: 0.2
+  circuit_breaker_failures: 3
+
+log_level: "INFO"
+
+watchers:
+  - id: "yongsan_spiderman_screenx"
+    name: "CGV 용산 4면 SCREENX 스파이더맨 지정일"
+    enabled: true
+    theater_code: "0013"
+    theater_name: "용산아이파크몰"
+    alert_title: "용산CGV"
+    hall_keywords: ["PRIVATE BOX"]
+    movie_keywords: ["스파이더맨"]
+    dates:
+      - "2026-08-10"
+      - "2026-08-13"
+      - "2026-08-14"
+      - "2026-08-18"
+      - "2026-08-21"
+      - "2026-08-22"
+      - "2026-08-23"
+
+  - id: "yeongdeungpo_spiderman_screenx"
+    name: "CGV 영등포 SCREENX 스파이더맨 지정일"
+    enabled: true
+    theater_code: "0059"
+    theater_name: "영등포"
+    alert_title: "영등포CGV"
+    hall_keywords: ["SCREENX"]
+    movie_keywords: ["스파이더맨"]
+    dates:
+      - "2026-08-13"
+      - "2026-08-14"
+      - "2026-08-18"
+      - "2026-08-21"
+      - "2026-08-22"
+      - "2026-08-23"
+
+  - id: "yongsan_odyssey_imax"
+    name: "CGV 용산 IMAX 오디세이 지정일"
+    enabled: true
+    theater_code: "0013"
+    theater_name: "용산아이파크몰"
+    alert_title: "용산CGV"
+    hall_keywords: ["IMAX", "아이맥스"]
+    movie_keywords: ["오디세이"]
+    dates:
+      - "2026-08-21"
+      - "2026-08-22"
+      - "2026-08-23"

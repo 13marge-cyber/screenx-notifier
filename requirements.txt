@@ -1,14 +1,11 @@
-# Core
-python-telegram-bot[job-queue]>=22.0
-pyyaml>=6.0
-requests>=2.31
-beautifulsoup4>=4.12
+# Runtime lock: GitHub Actions ubuntu-24.04 / Python 3.11.15
+requests==2.34.2
+PyYAML==6.0.3
+# requests transitive dependencies pinned for reproducible runner installs.
+certifi==2026.7.22
+charset-normalizer==3.4.9
+idna==3.18
+urllib3==2.7.0
 
-# CGV Cloudflare bypass (fallback)
-cloudscraper>=1.2
-
-# Selenium (CGV crawling - primary)
-selenium>=4.15
-
-# Optional: for production deployment
-# gunicorn>=21.2
+# First-party IANA time-zone database fallback for Windows / minimal runtimes.
+tzdata==2026.3

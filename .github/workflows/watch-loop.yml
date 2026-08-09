@@ -1,123 +1,105 @@
-name: ScreenX 1분 감시 루프
+name: ScreenX v4 1분 감시 루프
 
-# GitHub의 schedule(cron)은 지연이 심하고 자주 드롭됩니다
-# (실측: 10분 주기로 걸었는데 12시간에 2번 실행).
-# 그래서 cron으로 매번 깨우는 대신, 실행 한 번이 5시간 넘게 살아 있으면서
-# 내부에서 1분마다 확인하고, 끝나기 직전에 자기 자신을 다시 실행시킵니다.
 on:
   workflow_dispatch:
-  schedule:
-    # 재실행 체인이 끊겼을 때만 되살리는 안전망입니다.
-    # 평소에는 재실행 체인(PAT)이 주 경로라 자주 깨울 필요가 없습니다.
-    # 하루 두 번(00:11 / 12:11 KST)이면 체인이 끊겨도 반나절 안에 복구됩니다.
-    - cron: "11 3,15 * * *"
 
 permissions:
-  contents: write     # 감지 상태 커밋
-  actions: write      # 자기 자신 재실행
+  contents: write
+  actions: write
 
 concurrency:
-  # 이미 감시가 돌고 있으면 새 실행은 대기시킵니다(취소하지 않음).
-  # 앞 실행이 끝나면 대기하던 것이 이어받아 공백을 메웁니다.
-  group: screenx-watch-loop
+  group: screenx-watch-loop-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   watch:
-    runs-on: ubuntu-latest
-    # GitHub 작업 한도는 360분입니다. 상태 커밋과 재실행 트리거를 위해
-    # 여유를 두고 감시 자체는 320분만 돌립니다.
-    timeout-minutes: 350
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 345
     steps:
-      - name: 중복 실행 방지 (cron 안전망용)
-        # cron이 깨어났는데 이미 감시가 돌고 있으면, 대기하다 취소되면서
-        # "All jobs were cancelled" 메일을 만듭니다. 그 전에 스스로 조용히
-        # 정상 종료시켜 소음을 없앱니다. (dispatch 체인은 이 검사를 건너뜀)
-        id: guard
-        if: github.event_name == 'schedule'
+      - name: 최신 main 체크아웃
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Python 3.11.15 준비
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11.15'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python --version
+          python -m pip freeze
+
+      - name: 사전 점검
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
+        run: python main.py --config config.loop.yaml preflight
+
+      - name: 후속 실행 1개 선예약
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          others=$(gh run list --repo "${{ github.repository }}" \
-            --workflow watch-loop.yml --status in_progress \
-            --json databaseId \
-            --jq "[.[].databaseId] | map(select(. != ${{ github.run_id }})) | length")
-          if [ "${others:-0}" -gt 0 ]; then
-            echo "이미 감시 실행 중 - 이 cron 실행은 조용히 종료합니다."
-            echo "skip=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "감시 중인 실행 없음 - 안전망이 이어받습니다."
-            echo "skip=0" >> "$GITHUB_OUTPUT"
+          set +e
+          ok=0
+          for attempt in 1 2 3; do
+            gh workflow run watch-loop.yml --repo "${{ github.repository }}" --ref main
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+              ok=1
+              echo "후속 실행 예약 성공"
+              break
+            fi
+            echo "::warning::후속 실행 예약 실패 (${attempt}/3), 5초 후 재시도"
+            sleep 5
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::warning::후속 실행을 예약하지 못했습니다. watchdog이 복구를 시도합니다."
           fi
+          exit 0
 
-      - if: steps.guard.outputs.skip != '1'
-        uses: actions/checkout@v4
-
-      - if: steps.guard.outputs.skip != '1'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: 의존성 설치
-        if: steps.guard.outputs.skip != '1'
-        # CGV는 JSON API로 조회하므로 Selenium/Chrome이 필요 없습니다.
-        run: pip install --quiet "python-telegram-bot[job-queue]>=22.0" pyyaml requests beautifulsoup4
-
-      - name: 사전 점검 (CGV 도달 확인)
-        if: steps.guard.outputs.skip != '1'
-        # 러너 IP가 차단되면 조회가 전부 실패합니다. 이 경우 즉시 실패시켜
-        # '감시 중인데 아무것도 못 보는' 상태로 5시간을 낭비하지 않게 합니다.
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
-        run: python main.py --check --config config.loop.yaml
-
-      - name: 1분 간격 감시 (320분)
-        if: steps.guard.outputs.skip != '1'
+      - name: 1분 감시 (내부 315분 / 외부 325분 제한)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
         run: |
-          # --no-polling: 다른 곳(맥북 등)에서 같은 봇을 돌려도
-          # 텔레그램 getUpdates 충돌(409)이 나지 않게 합니다.
-          timeout --signal=TERM 19200 \
-            python main.py --no-polling --config config.loop.yaml || true
-          echo "감시 구간 종료"
+          # Python 내부 종료 + GNU timeout + Actions job timeout의 3중 안전장치.
+          timeout --signal=TERM --kill-after=60s 325m \
+            python main.py --config config.loop.yaml monitor --runtime-minutes 315
 
-      - name: 감지 상태 저장
-        # 취소된 경우(다른 실행에 밀림)엔 실행하지 않습니다. 이미 도는 쪽이 저장합니다.
-        if: ${{ !cancelled() && steps.guard.outputs.skip != '1' }}
-        # 상태가 안 남으면 다음 실행이 기준선을 다시 잡습니다.
+      - name: 상태 체크포인트 커밋
+        if: always() && !cancelled()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/actions-state
-          if git diff --staged --quiet; then
-            echo "상태 변화 없음 - 커밋 생략"
-          else
-            # 커밋을 먼저 해야 합니다. 스테이징된 변경이 남은 채로
-            # pull --rebase를 하면 "index contains uncommitted changes"로 실패합니다.
-            git commit -m "chore: 감지 상태 갱신"
-            git pull --rebase --quiet || true
-            git push
-          fi
-
-      - name: 다음 실행 이어붙이기
-        # 취소된 실행(다른 실행에 밀림)은 재실행을 만들지 않습니다.
-        # 그러지 않으면 취소가 새 실행을 낳고, 그게 또 밀려 취소되는 연쇄가 생깁니다.
-        # 정상 종료·타임아웃·오류로 끝났을 때만 다음 실행을 이어붙입니다.
-        if: ${{ !cancelled() && steps.guard.outputs.skip != '1' }}
-        # GITHUB_TOKEN으로 트리거한 이벤트는 새 워크플로 실행을 만들지 못합니다.
-        # 따라서 체인을 이으려면 PAT(WORKFLOW_PAT)가 필요합니다.
-        # 없으면 위의 cron 안전망에 의존합니다(간격이 들쭉날쭉해집니다).
-        env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "WORKFLOW_PAT 미설정 - 자동 재실행 불가, cron 안전망에 의존합니다."
+          git add data/notifier-state/
+          if git diff --cached --quiet; then
+            echo "상태 변경 없음"
             exit 0
           fi
-          gh workflow run watch-loop.yml --repo "${{ github.repository }}"
-          echo "다음 감시 실행을 요청했습니다."
+          git commit -m "chore: notifier state checkpoint [skip ci]"
+          for attempt in 1 2 3; do
+            if ! git pull --rebase origin main; then
+              echo "::error::상태 체크포인트 rebase 실패 - 자동 병합하지 않습니다."
+              exit 1
+            fi
+            if git push origin HEAD:main; then
+              echo "상태 체크포인트 push 성공"
+              exit 0
+            fi
+            echo "::warning::상태 체크포인트 push 실패 (${attempt}/3), 3초 후 최신 main 재동기화"
+            sleep 3
+          done
+          echo "::error::상태 체크포인트 push가 3회 모두 실패했습니다."
+          exit 1
+
+      - name: 비정상 종료 백오프
+        if: failure() && !cancelled()
+        run: |
+          echo "치명적 오류 재실행 폭주 방지를 위해 5분 대기합니다."
+          sleep 300

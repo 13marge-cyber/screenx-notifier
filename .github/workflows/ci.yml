@@ -1,0 +1,59 @@
+name: ScreenX v4 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'main.py'
+      - 'src/**'
+      - 'tests/**'
+      - 'config.loop.yaml'
+      - 'requirements*.txt'
+      - 'APPLY_V4.py'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'main.py'
+      - 'src/**'
+      - 'tests/**'
+      - 'config.loop.yaml'
+      - 'requirements*.txt'
+      - 'APPLY_V4.py'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout v7.0.1 (full SHA pin)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Setup Python v7.0.0 (full SHA pin)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11.15'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: 의존성 설치
+        run: python -m pip install --disable-pip-version-check -r requirements.txt -r requirements-dev.txt
+      - name: 런타임/패키지 버전 확인
+        run: |
+          python --version
+          python -m pip freeze
+      - name: Windows/minimal-runtime timezone fallback 검사
+        env:
+          PYTHONTZPATH: ""
+        run: python -c "from zoneinfo import ZoneInfo; assert ZoneInfo('Asia/Seoul').key == 'Asia/Seoul'"
+
+      - name: 문법 검사
+        run: python -m compileall -q main.py src tests APPLY_V4.py
+      - name: 설정 검사
+        run: python main.py --config config.loop.yaml validate
+      - name: 자동 테스트 + coverage
+        run: python -m pytest -q --cov=src --cov-report=term-missing --cov-fail-under=90

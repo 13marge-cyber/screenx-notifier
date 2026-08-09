@@ -1,364 +1,195 @@
-<div align="center">
+# ScreenX Notifier v4.0.1
 
-# 🎬 Movie Club Ticket Notifier
+개인 Telegram 1개로 CGV 용산/영등포 특별관 상영 일정 오픈을 약 1분 간격으로 감시하는 개인용 알리미입니다. v4의 목표는 기능 추가보다 **무알림 위험, 실행 체인 단절, 상태 손상과 검증 흔들림을 줄이는 것**입니다.
 
-**영화 동아리를 위한 올인원 예매 알림 텔레그램 봇**
+## 현재 감시 대상
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
-[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://docker.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/kimble125/movie-club-ticket-notifier/pulls)
+`config.loop.yaml`에 다음 3개 watcher가 들어 있습니다.
 
-*CGV IMAX 예매 오픈 감지 · 영화제 공지 모니터링 · 범용 웹사이트 변경 알림*
+- 용산아이파크몰 / 스파이더맨 / PRIVATE BOX
+- 영등포 / 스파이더맨 / SCREENX
+- 용산아이파크몰 / 오디세이 / IMAX·아이맥스
 
-[한국어](#-기능) | [English](#-features-1)
+영화·극장·특별관의 실질적 역할을 바꿀 때는 기존 `id`를 재사용하지 말고 새 `id`를 사용하세요. 표시용 `name`만 바꾸는 것은 괜찮습니다.
 
-</div>
+## v4 핵심 설계
 
----
+- CGV JSON API 직접 조회. Selenium·Cloudflare 우회·병렬 폭격 없음.
+- `현재 showtime key - known_keys`만으로 신규 판정. hash/baseline/initialized 없음.
+- 같은 극장+날짜 조회는 한 사이클 안에서 캐시해 중복 요청을 줄임.
+- CGV transport/HTTP/JSON 연속 실패는 극장별 circuit breaker(회로 차단기)로 격리.
+- CGV가 HTTP 200을 반환하더라도 상영 데이터 필드 구조가 달라지면 `SCHEMA_DRIFT`로 fail-closed(오류 시 정상으로 가장하지 않고 중단/장애 처리).
+- CGV 시간은 `0700`, `07:00`, `2430`, `25:30` 등을 검증해 처리하며 24·25시 표현을 그대로 보존.
+- 지난 날짜는 조회하지 않음.
+- watcher 내부 예상 밖 예외는 해당 watcher 장애로 격리해 다른 watcher 감시는 계속함.
+- 신규 회차는 **날짜별 Telegram transaction(성공/실패 단위)** 으로 전송. 날짜 A가 성공하고 날짜 B가 실패하면 A만 즉시 state에 확정하고 B만 다음 사이클에 재시도.
+- Telegram은 단일 개인채팅만 지원. `python-telegram-bot`/polling/명령어 없음.
+- Rich Message 정상 경로, 비일시적 Rich 4xx에 Plain fallback(대체 전송). 401/403은 즉시 실패, 429는 `retry_after`, network/5xx는 제한 재시도.
+- Plain 메시지가 길면 Telegram 제한에 맞춰 안전하게 분할.
+- 사용자 표시 시각·로그·날짜 판정은 `Asia/Seoul`(KST) 고정. timezone 설정 자체를 받지 않음.
+- watcher별 health(건강 상태): 3회 연속 실패 → 장애 알림 1회, 계속 실패 → 스팸 없음, 복구 → 복구 알림 1회.
+- 모든 지정 날짜가 끝난 watcher는 성공/복구로 가장하지 않고 하트비트에 `지정 날짜 종료`로 표시.
+- 상태는 `data/notifier-state/state.json` 한 곳을 사용하며 버전 번호와 분리.
+- 상태 저장은 temp → flush → file fsync → `os.replace` → 가능한 환경에서 directory fsync.
+- 이전 정상 state를 `state.backup.json` 한 세대 보관. primary 손상 시 검증된 backup만 복구하며 둘 다 손상이면 빈 상태로 조용히 초기화하지 않음.
+- 기존 v2/v3 state의 알려진 `keys`/`known_keys`를 v4 첫 실행 때 자동 이관하고 원본 legacy 파일은 보존.
+- Monitor의 시간은 주입 가능하게 만들어 테스트가 실제 오전/오후 시각에 따라 흔들리지 않음.
 
-## 🎯 이런 분들을 위한 프로젝트입니다
+## GitHub Secrets
 
-- 🎟 **CGV 용산 IMAX** 예매 전쟁에서 이기고 싶은 분
-- 🏔 **무주산골영화제** 등 영화제 예매 오픈을 놓치고 싶지 않은 분
-- 🎬 **영화 동아리** 운영자로서 멤버들에게 예매 알림을 자동화하고 싶은 분
-- 🔔 어떤 웹사이트든 **변경 사항을 실시간으로** 감지하고 싶은 분
+기존 Secret 두 개를 그대로 사용합니다.
 
----
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_IDS` — **양수 숫자 개인 chat id 정확히 1개**
 
-## ✨ 기능
+`WORKFLOW_PAT`은 v4 런타임에서 사용하지 않습니다.
 
-### 🎟 CGV 특별관 예매 오픈 감지
-- CGV 신규 사이트의 **공개 JSON API 직접 호출** (Selenium·Chrome 불필요)
-- 1회 조회가 1초 내에 끝나 **1분 간격 감시** 가능
-- IMAX, 4DX, ScreenX 등 **특별관 필터링**
-- 특정 영화만 감시하는 **키워드 필터** 지원
-- `watch_dates`로 감시 날짜를 좁혀 필요한 날짜만 정밀 감시
-- 새 상영 회차가 생기면 **그 회차만** 골라 텔레그램 알림
-
-### 📢 영화제 공지 모니터링
-- 무주산골영화제 등 **게시판 새 글 감지**
-- CSS 선택자 기반으로 **어떤 게시판이든** 모니터링 가능
-- 예매 오픈, 라인업 공개 등 **키워드 필터링**
-
-### 🔧 범용 웹사이트 변경 감지
-- `config.yaml` 하나로 **무한 확장** 가능
-- 메가박스, 롯데시네마, 독립영화관 등 자유롭게 추가
-- 코딩 없이 **YAML 설정만으로** 새 모니터링 대상 추가
-
-### 🤖 텔레그램 봇 인터페이스
-
-| 명령어 | 설명 |
-|--------|------|
-| `/start` | 알림 등록 (채팅 ID 자동 감지) |
-| `/status` | 모니터링 상태 확인 |
-| `/check` | 즉시 전체 확인 실행 |
-| `/help` | 도움말 |
-
----
-
-## 🏗 아키텍처
-
-```
-┌─────────────────────────────────────────────────┐
-│                 Telegram Bot Engine              │
-│          (python-telegram-bot + APScheduler)     │
-├─────────┬──────────────┬────────────────────────┤
-│  CGV    │   Webpage    │    (확장 가능)          │
-│ Crawler │   Crawler    │   Your Custom Crawler   │
-│ (JSON   │  (requests)  │                         │
-│  API,   │              │                         │
-│ requests)│             │                         │
-├─────────┴──────────────┴────────────────────────┤
-│              State Manager (JSON)                │
-│         변경 감지 · 중복 알림 방지 · 해시 비교     │
-├─────────────────────────────────────────────────┤
-│              config.yaml (YAML)                  │
-│     모든 설정을 한 파일에서 관리 · 코딩 불필요      │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-## 🚀 빠른 시작
-
-### 1. 사전 준비
-
-- [Telegram BotFather](https://t.me/BotFather)에서 봇 생성 후 토큰 발급
-- Python 3.11+ 또는 Docker
-
-### 2. 설치 및 실행
-
-#### 방법 A: Docker (권장)
+## 로컬 명령
 
 ```bash
-git clone https://github.com/kimble125/movie-club-ticket-notifier.git
-cd movie-club-ticket-notifier
-
-cp config.example.yaml config.yaml
-# config.yaml을 열어 봇 토큰과 채팅 ID를 입력하세요
-
-docker compose up -d
+python main.py --config config.loop.yaml validate
+python main.py --config config.loop.yaml check
+python main.py --config config.loop.yaml preflight
+python main.py --config config.loop.yaml once
+python main.py --config config.loop.yaml monitor --runtime-minutes 315
+python main.py --config config.loop.yaml selftest
 ```
 
-#### 방법 B: 직접 실행
+- `validate`: Secret 없이 YAML 구조·타입·중복·알 수 없는 키를 엄격 검사.
+- `check`: CGV를 1회 읽지만 Telegram/state는 변경하지 않음.
+- `preflight`: state는 반드시 정상이어야 함. Telegram 401/403·잘못된 private chat·CGV schema drift는 치명적 오류. Telegram/CGV timeout·5xx 같은 일시장애는 경고 후 감시 체인을 살림.
+- `once`: 실제 알림을 포함한 1회 감시.
+- `monitor`: 장기 1분 감시.
+- `selftest`: 실제 Telegram/CGV 연결과 가짜 오픈 종단간 시험.
 
-```bash
-git clone https://github.com/kimble125/movie-club-ticket-notifier.git
-cd movie-club-ticket-notifier
+## Self-test가 실제로 하는 것
 
-pip install -r requirements.txt
+수동 `ScreenX v4 실연결 자체진단` workflow를 실행하면 운영 state를 건드리지 않는 임시 state로 다음을 검사합니다.
 
-cp config.example.yaml config.yaml
-# config.yaml을 열어 봇 토큰과 채팅 ID를 입력하세요
+1. Telegram `getMe` + `getChat` 및 private chat 확인.
+2. CGV 날짜 API와 실제 상영 API 확인.
+3. Rich Message가 fallback 없이 실제 Rich로 성공하는지 확인.
+4. 의도적으로 잘못된 Rich payload를 보내 Plain fallback이 실제 동작하는지 확인.
+5. `🧪 자체진단 · 실제 예매 아님`이라고 명확히 표시한 가짜 신규 회차를 Monitor → Formatter → 실제 Telegram → atomic state 저장까지 통과시킴.
+6. 같은 가짜 회차를 한 번 더 검사해 중복 알림이 0건인지 확인.
 
-python main.py
+따라서 정상이라면 **사용자에게 보이는 테스트 메시지는 3건**(Rich 1건, Plain fallback 1건, 가짜 오픈 1건)이며 **실제 CGV 예매 오픈이 아닙니다.**
+
+## 상태 이관
+
+v4 기본 상태 경로:
+
+```text
+data/notifier-state/state.json
+data/notifier-state/state.backup.json
 ```
 
-#### 방법 C: 테스트 모드 (1회 확인)
+첫 v4 실행에서 state가 아직 없다면 `legacy_state_dirs`를 읽습니다.
 
-```bash
-python main.py --check   # 1회 확인, 결과만 출력 (알림 없음)
-python main.py --once    # 1회 확인, 변경이 있으면 알림까지 전송
+```text
+data/v3-state/
+data/actions-state/
 ```
 
-`--once`는 프로세스를 상주시킬 수 없는 GitHub Actions/cron 환경용입니다.
+지원하는 이전 형태:
 
-#### 방법 D: 상시 서버 (Oracle Cloud 등 Ubuntu VM)
+- r3 단일 `schema: 3` state
+- v3.1.2 `v3_<watcher-id>.json` / `v3_system.json`
+- v2 watcher 이름 기반 JSON의 `keys`
 
-맥북을 꺼도 계속 감시하려면 서버에 systemd 서비스로 등록하세요:
+이관은 **known key 합집합**만 사용합니다. 기존 legacy 파일은 삭제하지 않으므로 v4 안정화 전까지 rollback(이전 버전 복귀) 자료로 남습니다.
 
-```bash
-git clone <this-repo> && cd movie-club-ticket-notifier
-bash deploy/setup-vm.sh   # 안내에 따라 config.yaml 작성 후 재실행
-journalctl -u screenx-notifier -f
+## GitHub Actions 구조
+
+### `ScreenX v4 1분 감시 루프`
+
+1. 실행 시점의 최신 `main` checkout.
+2. Python 3.11.15 + 고정 dependency 설치.
+3. preflight.
+4. 후속 watch-loop 1개를 `github.token`으로 먼저 선예약.
+5. 내부 Monitor 최대 315분.
+6. shell `timeout` 325분.
+7. job `timeout-minutes` 345분.
+8. 정상/실패 종료 후 `data/notifier-state/` checkpoint를 main에 최대 3회 재시도해 push.
+
+수동 Cancel은 상태 push를 일부러 건너뜁니다. 러너가 비정상 소실되면 최근 원격 checkpoint 이후 이미 보낸 알림이 중복될 수 있습니다. **누락보다 드문 중복을 우선하는 정책**입니다.
+
+### `ScreenX v4 Watchdog`
+
+10분 간격으로 `main`의 watch-loop만 확인합니다.
+
+- running + queued가 있으면 아무것도 하지 않음.
+- running만 있고 queued가 없으면 후속 1개 생성.
+- 둘 다 없으면 체인을 다시 시작.
+- 가장 최근 run이 `cancelled`이고 active run이 없으면 수동 중지로 간주해 되살리지 않음.
+- 최근 failure 뒤에는 1시간 재시작 cooldown(재시작 대기)을 두어 설정 오류로 무한 실패하는 것을 막음.
+
+## 배포 순서
+
+가장 안전한 방법은 제공된 `APPLY_V4.py`를 사용하는 것입니다.
+
+```powershell
+py APPLY_V4.py "C:\path\to\screenx-notifier" --dry-run
+py APPLY_V4.py "C:\path\to\screenx-notifier"
 ```
 
-### 3. 채팅 ID 확인
+배포 스크립트는 `src`, `tests`, `.github/workflows`를 v4로 교체하고 구형 Docker/deploy/setup_watch 파일을 제거하지만 다음은 보존합니다.
 
-봇을 실행한 후 텔레그램에서 봇에게 `/start`를 보내면 채팅 ID가 자동으로 표시됩니다.
-표시된 ID를 `config.yaml`의 `chat_ids`에 추가하세요.
-
----
-
-## 🔄 다른 영화 / 상영관으로 다시 쓰기
-
-극장 코드나 상영관 이름을 찾을 필요 없이, 마법사가 CGV에서 실제 목록을
-가져와 고르게 해줍니다.
-
-```bash
-python setup_watch.py            # 대화형 설정 (config.yaml 생성)
-python setup_watch.py --loop     # GitHub Actions용 config.loop.yaml도 함께
-python setup_watch.py --list-movies   # 현재 상영작만 확인
+```text
+.git/
+data/actions-state/
+data/v3-state/
+data/notifier-state/state.json
+data/notifier-state/state.backup.json
 ```
 
-물어보는 것은 다섯 가지뿐입니다 — 영화 / 극장 / 상영관 / 날짜 / 주기.
-설정을 만들기 전에 **각 날짜가 이미 열렸는지 진단**해서 알려줍니다.
+적용 후에는 즉시 push하지 말고:
 
-```
-  ⚠️  이미 예매가 열린 날짜: 2026-08-10 (13회)
-      → 이 날짜들은 기준선에 포함되어 알림이 오지 않습니다.
-  ✅ 아직 안 열린 날짜: 4개 → 열리는 즉시 알림
-```
-
-이미 열린 날짜만 넣으면 알림이 올 수 없기 때문에, 시작 전에 확인시켜 줍니다.
-
-### GitHub Actions로 다시 감시하기
-
-맥북을 켜두지 않고 감시하려면 Actions 루프를 씁니다.
-(감시가 끝나면 워크플로를 비활성화해 두는 것이 기본입니다.)
-
-```bash
-# 1. 새 설정 만들기
-python setup_watch.py --loop
-
-# 2. 커밋 & 푸시
-git add config.loop.yaml && git commit -m "chore: 새 감시 대상 설정" && git push
-
-# 3. 워크플로 다시 켜기
-gh workflow enable watch-loop.yml --repo <사용자>/<리포>
-
-# 4. 감시 시작
-gh workflow run watch-loop.yml --repo <사용자>/<리포>
+```powershell
+py -m compileall -q main.py src tests APPLY_V4.py
+py main.py --config config.loop.yaml validate
+py -m pytest -q
+ git status
 ```
 
-끝낼 때는 `gh workflow disable watch-loop.yml --repo <사용자>/<리포>`.
+을 먼저 확인하세요.
 
-필요한 Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`,
-그리고 자동 재실행 체인을 위한 `WORKFLOW_PAT`(Actions: Read and write 권한).
+실서비스 전환은 다음 순서를 권장합니다.
 
-> **주의**: 상태 파일(`data/actions-state`)이 커밋되지 않으면, 실행이
-> 교체될 때 기준선이 어긋나 알림이 누락될 수 있습니다. 감시 중에
-> `chore: 감지 상태 갱신` 커밋이 주기적으로 올라오는지 확인하세요.
+1. 기존 v2/v3 **Running과 Pending/Queued를 모두 취소**하고 옛 watch-loop/watchdog을 Disable.
+2. v4를 `main`에 push.
+3. `ScreenX v4 CI` 통과 확인.
+4. `ScreenX v4 실연결 자체진단` 수동 실행 및 Telegram 테스트 메시지 확인.
+5. `ScreenX v4 1분 감시 루프` 수동 실행.
+6. running 1개 + queued successor 1개 확인.
+7. 다음 handoff에서 queued가 실제 running으로 승계되는지 확인.
+8. `data/notifier-state/state.json`이 main에 checkpoint되는지 확인.
+9. 실제 신규 CGV 회차가 생겼을 때 end-to-end 알림 수신 확인.
 
-### ⚠️ 감지가 느려지는 함정: `priority_dates`
+## 감시를 완전히 멈추는 방법
 
-`priority_dates`에 넣은 날짜는 **매 사이클** 확인하지만, 나머지
-`watch_dates`는 `full_scan_every` 사이클에 한 번만 봅니다.
-CGV 요청량을 줄이려는 옵션인데, **정작 예매가 열린 날짜가
-`priority_dates`에 없으면 그만큼 알림이 늦습니다.**
+1. `ScreenX v4 Watchdog`을 Disable.
+2. `ScreenX v4 1분 감시 루프`를 Disable.
+3. **Queued/Pending을 먼저 Cancel**.
+4. Running을 Cancel.
 
-> 실제 사례: 1분 감시로 설정했지만 `priority_dates`가 특정 하루뿐이라,
-> 다른 날짜가 열렸을 때 실효 감지 주기가 5분이 되었습니다.
+후속 queued run을 남겨두고 running만 취소하면 queued가 이어서 시작할 수 있습니다.
 
-날짜가 20개 이하라면 **`priority_dates`를 비우고 `full_scan_every: 1`**로
-두세요. 마법사는 기본으로 그렇게 설정합니다.
+## 의도적으로 하지 않는 것
 
----
+- 단톡방/다중 수신자
+- Telegram 명령어·polling
+- 자동예매/자동 좌석선택
+- Selenium/Cloudflare 우회
+- CGV 병렬 요청 폭격
+- 같은 사이클 CGV 재시도 폭주
+- 알림마다 Git push
+- 여러 날짜를 하나의 성공/실패 단위로 묶는 방식
 
-## ⚙️ 설정 가이드
+## 운영 한계
 
-`config.yaml` 파일 하나로 모든 것을 제어합니다:
-
-```yaml
-telegram:
-  bot_token: "YOUR_BOT_TOKEN"
-  chat_ids:
-    - "YOUR_CHAT_ID"
-
-watchers:
-  # CGV 특별관 모니터링
-  - name: "CGV 용산 IMAX"
-    type: "cgv"
-    enabled: true
-    interval_minutes: 5
-    settings:
-      theater_code: "0013"      # 용산아이파크몰
-      hall_keywords: ["IMAX"]
-      movie_keywords: []        # 비어있으면 모든 영화
-
-  # 웹페이지 변경 감지
-  - name: "무주산골영화제 공지"
-    type: "webpage"
-    enabled: true
-    interval_minutes: 30
-    settings:
-      url: "https://mjff.or.kr/kor/artyboard/mboard.asp?strBoardID=KZND_Q154"
-      selector: "a.brd_tit"
-      encoding: "euc-kr"
-```
-
-### CGV 극장 코드
-
-| 극장 | 코드 | 지역 코드 |
-|------|------|-----------|
-| 용산아이파크몰 | 0013 | 01 (서울) |
-| 영등포 | 0059 | 01 |
-| 왕십리 | 0074 | 01 |
-| 강남 | 0056 | 01 |
-| 여의도 | 0112 | 01 |
-| 수원 | 0012 | 12 (경기) |
-
-### 새 모니터링 대상 추가하기
-
-코딩 없이 `config.yaml`에 항목을 추가하면 됩니다:
-
-```yaml
-  - name: "메가박스 코엑스"
-    type: "webpage"
-    enabled: true
-    interval_minutes: 10
-    settings:
-      url: "https://www.megabox.co.kr/theater/time"
-      selector: ".theater-schedule"
-      encoding: "utf-8"
-      keywords: []
-```
-
----
-
-## 🐳 배포 가이드
-
-### Oracle Cloud (무료 영구 서버)
-
-```bash
-# Oracle Cloud VM에 SSH 접속 후
-sudo apt update && sudo apt install -y docker.io docker-compose
-git clone https://github.com/kimble125/movie-club-ticket-notifier.git
-cd movie-club-ticket-notifier
-cp config.example.yaml config.yaml
-nano config.yaml  # 설정 편집
-docker compose up -d
-```
-
-### GitHub Actions
-
-`.github/workflows/notify.yml`을 생성하여 주기적 자동 실행도 가능합니다.
-
----
-
-## 📁 프로젝트 구조
-
-```
-movie-club-ticket-notifier/
-├── main.py                    # 엔트리포인트
-├── config.example.yaml        # 설정 파일 템플릿
-├── requirements.txt           # Python 의존성
-├── Dockerfile                 # Docker 이미지 빌드
-├── docker-compose.yml         # Docker Compose 설정
-├── src/
-│   ├── config.py              # 설정 로더 및 검증
-│   ├── state.py               # 상태 관리 (변경 감지)
-│   ├── crawlers/
-│   │   ├── cgv.py             # CGV 크롤러 (Selenium + CF bypass)
-│   │   └── webpage.py         # 범용 웹페이지 크롤러
-│   └── bot/
-│       └── telegram_bot.py    # 텔레그램 봇 엔진
-└── data/
-    └── state/                 # 상태 데이터 (자동 생성)
-```
-
----
-
-## ✨ Features
-
-An all-in-one Telegram notification bot for movie clubs:
-
-- **CGV IMAX Booking Detection** - Selenium-based Cloudflare bypass, special hall filtering
-- **Film Festival Monitoring** - Detects new announcements on festival websites
-- **Universal Web Change Detection** - Monitor any website via CSS selectors, no coding required
-- **YAML-based Configuration** - Add new monitoring targets without writing code
-- **Docker Ready** - One-command deployment with Docker Compose
-
----
-
-## 🤝 기여하기 / Contributing
-
-새로운 크롤러 모듈이나 기능 개선을 환영합니다!
-
-1. Fork this repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### 크롤러 추가 가이드
-
-`src/crawlers/` 디렉토리에 새 크롤러를 추가하려면:
-
-1. `check()` 메서드: `{"items": [...], "raw_data": str}` 반환
-2. `format_message()` 메서드: Telegram MarkdownV2 형식 메시지 반환
-3. `config.yaml`에 새 `type` 등록
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [cgv-open-push](https://github.com/0w0i0n0g0/cgv-open-push) - CGV 크롤링 구조 참고
-- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) - 텔레그램 봇 프레임워크
-- [changedetection.io](https://github.com/dgtlmoon/changedetection.io) - 웹 변경 감지 아이디어 참고
-
----
-
-<div align="center">
-
-**⭐ 이 프로젝트가 도움이 되었다면 Star를 눌러주세요!**
-
-Made with ❤️ for movie lovers
-
-</div>
+- Telegram 서버가 실제 메시지를 받았지만 HTTP 응답만 유실되면 같은 알림이 드물게 재전송될 수 있습니다.
+- GitHub runner handoff에는 checkout/setup/preflight 시간만큼 짧은 공백이 생길 수 있습니다.
+- GitHub cron은 혼잡 시 지연될 수 있습니다.
+- CGV가 endpoint 자체나 정책을 바꾸면 코드 수정이 필요합니다. v4 schema guard는 **조용한 무알림**을 장애로 바꾸는 안전장치이지 API 변경을 자동 적응시키는 기능은 아닙니다.
+- repository/branch protection이 `GITHUB_TOKEN`의 Actions 또는 contents write를 막으면 successor dispatch/state checkpoint가 실패할 수 있으므로 실제 GitHub에서 최종 검증해야 합니다.
