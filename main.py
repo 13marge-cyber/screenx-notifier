@@ -218,12 +218,8 @@ def cmd_selftest(config_path: str) -> int:
             raise RuntimeError("Rich Message 자체진단이 실제 Rich로 성공하지 못했습니다.")
 
         time.sleep(1.1)
-        fallback_ok = telegram.send_alert(
-            {
-                "html": "<b>v4 fallback probe</b>",
-                "blocks": [{"type": "paragraph", "text": "v4 fallback probe"}],
-            },
-            f"🧪 v4 Plain fallback 자체진단 성공\n⏰ 한국시간: {format_kst()}",
+        fallback_ok = telegram.selftest_plain_fallback(
+            f"🧪 v4 Plain fallback 자체진단 성공\n⏰ 한국시간: {format_kst()}"
         )
         if not fallback_ok or not telegram.last_fallback_used:
             raise RuntimeError("의도한 Plain fallback 경로가 실행되지 않았습니다.")

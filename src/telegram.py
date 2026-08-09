@@ -212,13 +212,13 @@ class TelegramClient:
                 return False
         return True
 
-    def send_alert(self, rich_message: dict[str, Any], plain_text: str) -> bool:
+    def _finish_alert_after_rich_result(self, rich: ApiResult, plain_text: str) -> bool:
+        """Apply the production Rich->Plain decision to a completed Rich result.
+
+        The live selftest uses this same decision with a synthetic Rich 400 so it
+        doesn't depend on Telegram rejecting one particular malformed payload.
+        """
         self.last_fallback_used = False
-        rich = self._call(
-            "sendRichMessage",
-            {"chat_id": self.chat_id, "rich_message": rich_message},
-            max_attempts=3,
-        )
         if rich.ok:
             return True
         if int(rich.error_code or 0) in {401, 403}:
@@ -240,3 +240,20 @@ class TelegramClient:
         )
         self.last_fallback_used = True
         return self.send_plain(plain_text)
+
+    def send_alert(self, rich_message: dict[str, Any], plain_text: str) -> bool:
+        rich = self._call(
+            "sendRichMessage",
+            {"chat_id": self.chat_id, "rich_message": rich_message},
+            max_attempts=3,
+        )
+        return self._finish_alert_after_rich_result(rich, plain_text)
+
+    def selftest_plain_fallback(self, plain_text: str) -> bool:
+        """Exercise the exact production 400->Plain branch deterministically.
+
+        Only the Rich failure stimulus is synthetic. The fallback decision is the
+        production path and the Plain message is still sent to the real Telegram chat.
+        """
+        synthetic_400 = ApiResult(False, 400, "selftest: synthetic Rich 400")
+        return self._finish_alert_after_rich_result(synthetic_400, plain_text)

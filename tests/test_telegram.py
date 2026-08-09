@@ -41,6 +41,16 @@ def test_rich_400_falls_back_plain():
     assert tg.last_fallback_used is True
 
 
+def test_selftest_plain_fallback_uses_production_branch_and_real_plain_send():
+    session = FakeHTTPSession(post_responses=[FakeResponse(200, ok_payload())])
+    tg = TelegramClient("TOKEN", "1", session=session, sleep=lambda _: None)
+    assert tg.selftest_plain_fallback("selftest plain") is True
+    assert tg.last_fallback_used is True
+    assert len(session.post_calls) == 1
+    assert session.post_calls[0][0].endswith("/sendMessage")
+    assert session.post_calls[0][1]["text"] == "selftest plain"
+
+
 def test_auth_error_does_not_plain_fallback():
     session = FakeHTTPSession(post_responses=[FakeResponse(401, error_payload(401, "unauthorized"))])
     tg = TelegramClient("TOKEN", "1", session=session, sleep=lambda _: None)

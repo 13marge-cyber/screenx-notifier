@@ -1,4 +1,4 @@
-# screenx-notifier v4.0.1
+# screenx-notifier v4.0.2
 # 모든 사용자 표시 시간은 코드에서 Asia/Seoul(KST)로 고정합니다.
 # Telegram 비밀값은 GitHub Secrets에서만 읽습니다.
 # 필요 Secret: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS (개인 chat id 정확히 1개)
