@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "last_heartbeat_date": null,
+    "last_heartbeat_signature": null,
+    "migration_sources": []
+  },
+  "schema": 4,
+  "watchers": {
+    "cgv_cheonho_odyssey_imax_20260829_30": {
+      "health": {
+        "consecutive_failures": 0,
+        "down_notified": false,
+        "last_error": null,
+        "last_success_at": "2026-08-11T07:29:23.294768+09:00"
+      },
+      "known_keys": []
+    },
+    "cgv_gwanggyo_odyssey_imax_20260829_30": {
+      "health": {
+        "consecutive_failures": 0,
+        "down_notified": false,
+        "last_error": null,
+        "last_success_at": "2026-08-11T07:29:23.294768+09:00"
+      },
+      "known_keys": []
+    },
+    "cgv_yongsan_odyssey_imax_20260829_30": {
+      "health": {
+        "consecutive_failures": 0,
+        "down_notified": false,
+        "last_error": null,
+        "last_success_at": "2026-08-11T07:29:23.294768+09:00"
+      },
+      "known_keys": []
+    },
+    "megabox_suwonak_dolby_odyssey_spiderman_20260815_17": {
+      "health": {
+        "consecutive_failures": 0,
+        "down_notified": false,
+        "last_error": null,
+        "last_success_at": "2026-08-11T07:29:23.294768+09:00"
+      },
+      "known_keys": []
+    }
+  }
+}
