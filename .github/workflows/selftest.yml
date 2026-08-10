@@ -1,4 +1,4 @@
-name: ScreenX v4 실연결 자체진단
+name: 영화 예매 알리미 v5 실연결 자체진단
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: 의존성 설치
         run: python -m pip install --disable-pip-version-check -r requirements.txt
-      - name: 실제 Telegram + CGV + 가짜 오픈 E2E 자체진단
+      - name: 실제 Telegram + CGV + Megabox + 가짜 오픈 E2E 자체진단
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}

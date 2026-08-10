@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import APPLY_V4
+import APPLY_V5
 
 
 def sha256(path: Path) -> str:
@@ -30,6 +30,8 @@ def make_fake_repo(tmp_path: Path) -> Path:
     (repo / ".github" / "workflows" / "old.yml").write_text("name: old\n", encoding="utf-8")
     (repo / "deploy" / "old.txt").write_text("OLD\n", encoding="utf-8")
     (repo / "setup_watch.py").write_text("OLD\n", encoding="utf-8")
+    (repo / "APPLY_V4.py").write_text("OLD\n", encoding="utf-8")
+    (repo / "MIGRATION_V4.md").write_text("OLD\n", encoding="utf-8")
 
     legacy = repo / "data" / "actions-state" / "용산_SCREENX_스파이더맨.json"
     legacy.write_text(json.dumps({"keys": ["one", "two"]}), encoding="utf-8")
@@ -47,12 +49,14 @@ def make_fake_repo(tmp_path: Path) -> Path:
 
 def test_plan_reports_preserved_state_and_obsolete_files(tmp_path):
     repo = make_fake_repo(tmp_path)
-    plan = APPLY_V4.plan(repo)
+    plan = APPLY_V5.plan(repo)
     assert "PRESERVE data/actions-state" in plan
     assert "PRESERVE data/v3-state" in plan
     assert "PRESERVE data/notifier-state/state.json" in plan
     assert "REMOVE obsolete deploy" in plan
     assert "REMOVE obsolete setup_watch.py" in plan
+    assert "REMOVE obsolete APPLY_V4.py" in plan
+    assert "REMOVE obsolete MIGRATION_V4.md" in plan
 
 
 def test_apply_preserves_all_state_bytes_and_replaces_old_tree(tmp_path):
@@ -65,12 +69,16 @@ def test_apply_preserves_all_state_bytes_and_replaces_old_tree(tmp_path):
     ]
     before = {str(path.relative_to(repo)): sha256(path) for path in tracked}
 
-    APPLY_V4.apply(repo)
+    APPLY_V5.apply(repo)
 
     after = {str(path.relative_to(repo)): sha256(path) for path in tracked}
     assert after == before
     assert not (repo / "deploy").exists()
     assert not (repo / "setup_watch.py").exists()
+    assert not (repo / "APPLY_V4.py").exists()
+    assert not (repo / "MIGRATION_V4.md").exists()
+    assert (repo / "APPLY_V5.py").exists()
+    assert (repo / "MIGRATION_V5.md").exists()
     assert not (repo / "src" / "old.py").exists()
     assert not (repo / "tests" / "old_test.py").exists()
     assert not (repo / ".github" / "workflows" / "old.yml").exists()
@@ -83,9 +91,9 @@ def test_apply_refuses_non_git_directory(tmp_path):
     target = tmp_path / "not-a-repo"
     target.mkdir()
     with pytest.raises(SystemExit, match=".git"):
-        APPLY_V4.apply(target)
+        APPLY_V5.apply(target)
 
 
 def test_apply_refuses_source_directory_itself():
     with pytest.raises(SystemExit, match="원본 폴더"):
-        APPLY_V4.apply(APPLY_V4.ROOT)
+        APPLY_V5.apply(APPLY_V5.ROOT)

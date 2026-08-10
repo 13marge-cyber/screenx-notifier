@@ -18,7 +18,7 @@ def raw_config():
                 "name": "one",
                 "theater_code": "0013",
                 "theater_name": "용산",
-                "alert_title": "용산CGV",
+                "alert_title": "용산 IMAX",
                 "hall_keywords": ["IMAX"],
                 "movie_keywords": ["오디세이"],
                 "dates": ["2026-08-21"],
@@ -101,7 +101,7 @@ def test_chat_ids_split_on_whitespace_and_reject_multiple():
         )
 
 
-def test_group_chat_id_rejected_for_private_only_v4():
+def test_group_chat_id_rejected_for_private_only_v5():
     with pytest.raises(ConfigError, match="개인 채팅"):
         validate_config(
             raw_config(),
@@ -291,3 +291,64 @@ def test_bad_cgv_bounds_are_rejected():
     cfg["cgv"]["circuit_breaker_failures"] = 11
     with pytest.raises(ConfigError, match="1~10"):
         validate_config(cfg, require_secrets=False)
+
+
+def test_megabox_watcher_requires_area_code_and_rejects_cgv_only_field():
+    cfg = raw_config()
+    w = cfg["watchers"][0]
+    w["provider"] = "megabox"
+    w.pop("co_cd", None)
+    with pytest.raises(ConfigError, match="area_code"):
+        validate_config(cfg, require_secrets=False)
+    w["area_code"] = "30"
+    w["co_cd"] = "A420"
+    with pytest.raises(ConfigError, match="co_cd"):
+        validate_config(cfg, require_secrets=False)
+
+
+def test_unknown_provider_rejected():
+    cfg = raw_config()
+    cfg["watchers"][0]["provider"] = "lotte"
+    with pytest.raises(ConfigError, match="cgv 또는 megabox"):
+        validate_config(cfg, require_secrets=False)
+
+
+def test_live_config_is_three_cgv_imax_plus_one_suwonak_dolby_test_watcher():
+    from pathlib import Path
+    from src.config import load_config
+
+    root = Path(__file__).resolve().parents[1]
+    cfg = load_config(root / "config.loop.yaml", require_secrets=False)
+    watchers = cfg["watchers"]
+    assert [(w["provider"], w["theater_code"], w["alert_title"]) for w in watchers] == [
+        ("cgv", "0013", "용산 IMAX"),
+        ("cgv", "0199", "천호 IMAX"),
+        ("cgv", "0257", "광교 IMAX"),
+        ("megabox", "0052", "수원AK Dolby"),
+    ]
+    cgv = watchers[:3]
+    assert all(w["movie_keywords"] == ["오디세이"] for w in cgv)
+    assert all(w["hall_keywords"] == ["IMAX", "아이맥스"] for w in cgv)
+    assert all(w["dates"] == ["2026-08-29", "2026-08-30"] for w in cgv)
+    mb = watchers[3]
+    assert mb["id"] == "megabox_suwonak_dolby_odyssey_spiderman_20260815_17"
+    assert mb["name"] == "메가박스 수원AK Dolby · 오디세이+스파이더맨 · 8/15-17"
+    assert mb["area_code"] == "30"
+    assert mb["hall_keywords"] == ["DOLBY CINEMA"]
+    assert mb["movie_keywords"] == ["오디세이", "스파이더맨 브랜드 뉴 데이"]
+    assert mb["dates"] == ["2026-08-15", "2026-08-16", "2026-08-17"]
+    assert len({w["id"] for w in watchers}) == 4
+
+
+def test_megabox_runtime_canary_interval_defaults_and_bounds():
+    base_mb = {"timeout_seconds": 8, "request_delay_seconds": 0.3, "circuit_breaker_failures": 3, "schema_probe_days": 4}
+    cfg = raw_config()
+    cfg["megabox"] = dict(base_mb)
+    validated = validate_config(cfg, require_secrets=False)
+    assert validated["megabox"]["runtime_canary_interval_seconds"] == 900
+
+    for bad in (299, 3601, True):
+        cfg = raw_config()
+        cfg["megabox"] = dict(base_mb, runtime_canary_interval_seconds=bad)
+        with pytest.raises(ConfigError):
+            validate_config(cfg, require_secrets=False)

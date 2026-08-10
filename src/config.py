@@ -1,4 +1,4 @@
-"""Strict YAML/environment configuration validation for screenx-notifier v4."""
+"""Strict YAML/environment configuration validation for movie booking notifier v5."""
 from __future__ import annotations
 
 import os
@@ -15,7 +15,7 @@ class ConfigError(ValueError):
     pass
 
 
-_TOP_KEYS = {"telegram", "monitor", "cgv", "watchers", "log_level"}
+_TOP_KEYS = {"telegram", "monitor", "cgv", "megabox", "watchers", "log_level"}
 _MONITOR_KEYS = {
     "interval_seconds",
     "failure_alert_threshold",
@@ -24,18 +24,11 @@ _MONITOR_KEYS = {
     "heartbeat",
 }
 _HEARTBEAT_KEYS = {"enabled", "time"}
-_CGV_KEYS = {"timeout_seconds", "request_delay_seconds", "circuit_breaker_failures"}
+_CLIENT_KEYS = {"timeout_seconds", "request_delay_seconds", "circuit_breaker_failures"}
+_MEGABOX_KEYS = _CLIENT_KEYS | {"schema_probe_days", "runtime_canary_interval_seconds"}
 _WATCHER_KEYS = {
-    "id",
-    "name",
-    "enabled",
-    "theater_code",
-    "theater_name",
-    "alert_title",
-    "hall_keywords",
-    "movie_keywords",
-    "dates",
-    "co_cd",
+    "id", "name", "enabled", "provider", "theater_code", "theater_name",
+    "alert_title", "hall_keywords", "movie_keywords", "dates", "co_cd", "area_code",
 }
 _TELEGRAM_KEYS: set[str] = set()
 
@@ -109,21 +102,53 @@ def _validate_dates(values: Any, label: str) -> list[str]:
 def _validate_keywords(values: Any, label: str) -> list[str]:
     if not isinstance(values, list) or not values:
         raise ConfigError(f"{label}은 1개 이상의 문자열 리스트여야 합니다.")
-    cleaned: list[str] = []
-    for value in values:
-        cleaned.append(_require_nonempty_str(value, label))
+    cleaned = [_require_nonempty_str(value, label) for value in values]
+    if len(set(value.upper() for value in cleaned)) != len(cleaned):
+        raise ConfigError(f"{label}에 중복 키워드가 있습니다.")
     return cleaned
 
 
 def _validate_path_list(values: Any, label: str) -> list[str]:
     if not isinstance(values, list):
         raise ConfigError(f"{label}은 경로 문자열 리스트여야 합니다.")
-    result: list[str] = []
-    for value in values:
-        result.append(_require_nonempty_str(value, label))
+    result = [_require_nonempty_str(value, label) for value in values]
     if len(set(result)) != len(result):
         raise ConfigError(f"{label}에 중복 경로가 있습니다.")
     return result
+
+
+def _validate_client_config(raw: Any, label: str, allowed: set[str], *, probe_days: bool = False) -> dict[str, Any]:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{label} 설정이 객체가 아닙니다.")
+    cfg = deepcopy(raw)
+    _reject_unknown(cfg, allowed, label)
+    timeout = _as_float(cfg.get("timeout_seconds", 6.0), f"{label}.timeout_seconds")
+    if not 2.0 <= timeout <= 20.0:
+        raise ConfigError(f"{label}.timeout_seconds는 2~20초여야 합니다.")
+    cfg["timeout_seconds"] = timeout
+    delay = _as_float(cfg.get("request_delay_seconds", 0.2), f"{label}.request_delay_seconds")
+    if not 0.0 <= delay <= 5.0:
+        raise ConfigError(f"{label}.request_delay_seconds는 0~5초여야 합니다.")
+    cfg["request_delay_seconds"] = delay
+    breaker = _as_int(cfg.get("circuit_breaker_failures", 3), f"{label}.circuit_breaker_failures")
+    if not 1 <= breaker <= 10:
+        raise ConfigError(f"{label}.circuit_breaker_failures는 1~10이어야 합니다.")
+    cfg["circuit_breaker_failures"] = breaker
+    if probe_days:
+        days = _as_int(cfg.get("schema_probe_days", 4), f"{label}.schema_probe_days")
+        if not 1 <= days <= 7:
+            raise ConfigError(f"{label}.schema_probe_days는 1~7이어야 합니다.")
+        cfg["schema_probe_days"] = days
+        canary = _as_int(
+            cfg.get("runtime_canary_interval_seconds", 900),
+            f"{label}.runtime_canary_interval_seconds",
+        )
+        if not 300 <= canary <= 3600:
+            raise ConfigError(f"{label}.runtime_canary_interval_seconds는 300~3600초여야 합니다.")
+        cfg["runtime_canary_interval_seconds"] = canary
+    return cfg
 
 
 def _parse_single_chat_id(env: dict[str, str]) -> str:
@@ -132,7 +157,7 @@ def _parse_single_chat_id(env: dict[str, str]) -> str:
         raise ConfigError("TELEGRAM_CHAT_IDS Secret이 없습니다.")
     ids = [item for item in re.split(r"[,;\s]+", raw) if item]
     if len(ids) != 1:
-        raise ConfigError(f"v4는 Telegram 개인 수신자 1개만 허용합니다. 현재 {len(ids)}개입니다.")
+        raise ConfigError(f"v5는 Telegram 개인 수신자 1개만 허용합니다. 현재 {len(ids)}개입니다.")
     chat_id = ids[0]
     if not chat_id.isdigit() or int(chat_id) <= 0:
         raise ConfigError("TELEGRAM_CHAT_IDS에는 개인 채팅의 양수 숫자 chat id 1개만 넣어야 합니다.")
@@ -158,29 +183,19 @@ def validate_config(
     if not isinstance(monitor, dict):
         raise ConfigError("monitor 설정이 객체가 아닙니다.")
     _reject_unknown(monitor, _MONITOR_KEYS, "monitor")
-
     interval = _as_int(monitor.get("interval_seconds", 60), "monitor.interval_seconds")
     if not 30 <= interval <= 3600:
         raise ConfigError("monitor.interval_seconds는 30~3600초여야 합니다.")
     monitor["interval_seconds"] = interval
-
-    threshold = _as_int(
-        monitor.get("failure_alert_threshold", 3),
-        "monitor.failure_alert_threshold",
-    )
+    threshold = _as_int(monitor.get("failure_alert_threshold", 3), "monitor.failure_alert_threshold")
     if not 1 <= threshold <= 20:
         raise ConfigError("monitor.failure_alert_threshold는 1~20이어야 합니다.")
     monitor["failure_alert_threshold"] = threshold
-
-    monitor["state_dir"] = _require_nonempty_str(
-        monitor.get("state_dir", "./data/notifier-state"),
-        "monitor.state_dir",
-    )
+    monitor["state_dir"] = _require_nonempty_str(monitor.get("state_dir", "./data/notifier-state"), "monitor.state_dir")
     monitor["legacy_state_dirs"] = _validate_path_list(
         monitor.get("legacy_state_dirs", ["./data/v3-state", "./data/actions-state"]),
         "monitor.legacy_state_dirs",
     )
-
     heartbeat = monitor.setdefault("heartbeat", {})
     if not isinstance(heartbeat, dict):
         raise ConfigError("monitor.heartbeat 설정이 객체가 아닙니다.")
@@ -188,22 +203,8 @@ def validate_config(
     heartbeat["enabled"] = _as_bool(heartbeat.get("enabled", True), "monitor.heartbeat.enabled")
     heartbeat["time"] = _validate_time(heartbeat.get("time", "09:00"), "monitor.heartbeat.time")
 
-    cgv = cfg.setdefault("cgv", {})
-    if not isinstance(cgv, dict):
-        raise ConfigError("cgv 설정이 객체가 아닙니다.")
-    _reject_unknown(cgv, _CGV_KEYS, "cgv")
-    timeout = _as_float(cgv.get("timeout_seconds", 6.0), "cgv.timeout_seconds")
-    if not 2.0 <= timeout <= 20.0:
-        raise ConfigError("cgv.timeout_seconds는 2~20초여야 합니다.")
-    cgv["timeout_seconds"] = timeout
-    delay = _as_float(cgv.get("request_delay_seconds", 0.2), "cgv.request_delay_seconds")
-    if not 0.0 <= delay <= 5.0:
-        raise ConfigError("cgv.request_delay_seconds는 0~5초여야 합니다.")
-    cgv["request_delay_seconds"] = delay
-    breaker = _as_int(cgv.get("circuit_breaker_failures", 3), "cgv.circuit_breaker_failures")
-    if not 1 <= breaker <= 10:
-        raise ConfigError("cgv.circuit_breaker_failures는 1~10이어야 합니다.")
-    cgv["circuit_breaker_failures"] = breaker
+    cfg["cgv"] = _validate_client_config(cfg.get("cgv"), "cgv", _CLIENT_KEYS)
+    cfg["megabox"] = _validate_client_config(cfg.get("megabox"), "megabox", _MEGABOX_KEYS, probe_days=True)
 
     watchers = cfg.get("watchers")
     if not isinstance(watchers, list) or not watchers:
@@ -228,25 +229,30 @@ def validate_config(
             raise ConfigError(f"watcher name 중복: {watcher['name']}")
         names.add(watcher["name"])
         watcher["enabled"] = _as_bool(watcher.get("enabled", True), f"{watcher_id}.enabled")
-        watcher["theater_code"] = _require_nonempty_str(
-            watcher.get("theater_code"), f"{watcher_id}.theater_code"
-        )
+        provider = _require_nonempty_str(watcher.get("provider", "cgv"), f"{watcher_id}.provider").lower()
+        if provider not in {"cgv", "megabox"}:
+            raise ConfigError(f"{watcher_id}.provider는 cgv 또는 megabox여야 합니다.")
+        watcher["provider"] = provider
+        watcher["theater_code"] = _require_nonempty_str(watcher.get("theater_code"), f"{watcher_id}.theater_code")
         if not watcher["theater_code"].isdigit() or len(watcher["theater_code"]) != 4:
             raise ConfigError(f"{watcher_id}.theater_code는 4자리 숫자여야 합니다.")
-        watcher["theater_name"] = _require_nonempty_str(
-            watcher.get("theater_name"), f"{watcher_id}.theater_name"
-        )
-        watcher["alert_title"] = _require_nonempty_str(
-            watcher.get("alert_title"), f"{watcher_id}.alert_title"
-        )
-        watcher["hall_keywords"] = _validate_keywords(
-            watcher.get("hall_keywords"), f"{watcher_id}.hall_keywords"
-        )
-        watcher["movie_keywords"] = _validate_keywords(
-            watcher.get("movie_keywords"), f"{watcher_id}.movie_keywords"
-        )
+        watcher["theater_name"] = _require_nonempty_str(watcher.get("theater_name"), f"{watcher_id}.theater_name")
+        watcher["alert_title"] = _require_nonempty_str(watcher.get("alert_title"), f"{watcher_id}.alert_title")
+        watcher["hall_keywords"] = _validate_keywords(watcher.get("hall_keywords"), f"{watcher_id}.hall_keywords")
+        watcher["movie_keywords"] = _validate_keywords(watcher.get("movie_keywords"), f"{watcher_id}.movie_keywords")
         watcher["dates"] = _validate_dates(watcher.get("dates"), f"{watcher_id}.dates")
-        watcher["co_cd"] = _require_nonempty_str(watcher.get("co_cd", "A420"), f"{watcher_id}.co_cd")
+
+        if provider == "cgv":
+            if "area_code" in watcher:
+                raise ConfigError(f"{watcher_id}.area_code는 megabox watcher에서만 사용합니다.")
+            watcher["co_cd"] = _require_nonempty_str(watcher.get("co_cd", "A420"), f"{watcher_id}.co_cd")
+        else:
+            if "co_cd" in watcher:
+                raise ConfigError(f"{watcher_id}.co_cd는 cgv watcher에서만 사용합니다.")
+            area_code = _require_nonempty_str(watcher.get("area_code"), f"{watcher_id}.area_code")
+            if not area_code.isdigit() or len(area_code) != 2:
+                raise ConfigError(f"{watcher_id}.area_code는 2자리 숫자여야 합니다.")
+            watcher["area_code"] = area_code
         normalized.append(watcher)
     cfg["watchers"] = normalized
     if not any(watcher["enabled"] for watcher in normalized):
@@ -266,11 +272,7 @@ def validate_config(
     return cfg
 
 
-def load_config(
-    path: str | Path,
-    require_secrets: bool = True,
-    env: dict[str, str] | None = None,
-) -> dict[str, Any]:
+def load_config(path: str | Path, require_secrets: bool = True, env: dict[str, str] | None = None) -> dict[str, Any]:
     config_path = Path(path)
     if not config_path.exists():
         raise ConfigError(f"설정 파일을 찾을 수 없습니다: {config_path}")

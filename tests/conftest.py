@@ -25,14 +25,21 @@ def base_config():
             "request_delay_seconds": 0.0,
             "circuit_breaker_failures": 3,
         },
+        "megabox": {
+            "timeout_seconds": 8.0,
+            "request_delay_seconds": 0.0,
+            "circuit_breaker_failures": 3,
+            "schema_probe_days": 4,
+        },
         "watchers": [
             {
                 "id": "yongsan_test",
                 "name": "용산 테스트",
                 "enabled": True,
+                "provider": "cgv",
                 "theater_code": "0013",
                 "theater_name": "용산아이파크몰",
-                "alert_title": "용산CGV",
+                "alert_title": "용산 IMAX",
                 "hall_keywords": ["IMAX"],
                 "movie_keywords": ["오디세이"],
                 "dates": ["2026-08-21"],
@@ -82,8 +89,9 @@ class FakeHTTPSession:
             raise item
         return item
 
-    def post(self, url, json=None, timeout=None):
-        self.post_calls.append((url, json, timeout))
+    def post(self, url, json=None, data=None, timeout=None, **kwargs):
+        payload = data if data is not None else json
+        self.post_calls.append((url, payload, timeout))
         if not self.post_responses:
             raise AssertionError("unexpected POST")
         item = self.post_responses.pop(0)

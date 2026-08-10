@@ -1,6 +1,8 @@
-"""Core v4 monitor loop: detection, date-transaction alerts, health, and heartbeat."""
+"""Core v5 monitor loop: provider-neutral detection, date transactions, health, and heartbeat."""
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import signal
 import threading
@@ -9,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Callable
 
-from .cgv import CGVClient, showtime_key
+from .providers import showtime_key
 from .config import enabled_watchers
 from .formatter import build_health_message, build_heartbeat, build_plain_alert, build_rich_alert
 from .state import StateError, StateManager
@@ -24,7 +26,7 @@ class Monitor:
         self,
         config: dict[str, Any],
         state: StateManager,
-        cgv: CGVClient,
+        providers: Any,
         telegram: TelegramClient,
         *,
         monotonic: Callable[[], float] = time.monotonic,
@@ -32,7 +34,7 @@ class Monitor:
     ):
         self.config = config
         self.state = state
-        self.cgv = cgv
+        self.providers = providers
         self.telegram = telegram
         self.monotonic = monotonic
         self.now_fn = now_fn
@@ -56,6 +58,9 @@ class Monitor:
 
     @staticmethod
     def _health_detail(result: dict[str, Any]) -> str:
+        provider_error = result.get("provider_error")
+        if provider_error:
+            return f"provider canary 실패 ({provider_error})"
         failed = result.get("failed_dates", [])
         errors = result.get("errors", {})
         if not failed:
@@ -77,7 +82,8 @@ class Monitor:
         if not active_dates:
             return
         failed_dates = result.get("failed_dates", [])
-        if failed_dates:
+        provider_error = result.get("provider_error")
+        if failed_dates or provider_error:
             health["consecutive_failures"] = int(health.get("consecutive_failures", 0) or 0) + 1
             health["last_error"] = self._health_detail(result)
             if (
@@ -113,6 +119,25 @@ class Monitor:
             health["down_notified"] = event["kind"] == "down"
         self.state.save()
 
+    def _heartbeat_signature(self) -> str:
+        # A daily heartbeat must also refresh immediately after the monitored target
+        # set changes on the same date.  Otherwise an old campaign heartbeat can hide
+        # that a newly deployed theater/date configuration has never been shown.
+        payload = [
+            {
+                "id": watcher["id"],
+                "provider": watcher.get("provider", "cgv"),
+                "theater_code": watcher["theater_code"],
+                "alert_title": watcher["alert_title"],
+                "hall_keywords": watcher["hall_keywords"],
+                "movie_keywords": watcher["movie_keywords"],
+                "dates": watcher["dates"],
+            }
+            for watcher in self.watchers
+        ]
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
     def _heartbeat_due(self, at: datetime) -> bool:
         heartbeat = self.config["monitor"]["heartbeat"]
         if not heartbeat["enabled"]:
@@ -120,7 +145,11 @@ class Monitor:
         hour, minute = (int(part) for part in heartbeat["time"].split(":", 1))
         if (at.hour, at.minute) < (hour, minute):
             return False
-        return self.state.meta().get("last_heartbeat_date") != at.date().isoformat()
+        meta = self.state.meta()
+        return (
+            meta.get("last_heartbeat_date") != at.date().isoformat()
+            or meta.get("last_heartbeat_signature") != self._heartbeat_signature()
+        )
 
     def _maybe_heartbeat(self, at: datetime) -> None:
         if not self._heartbeat_due(at):
@@ -133,7 +162,9 @@ class Monitor:
             at=at,
         )
         if self.telegram.send_plain(message):
-            self.state.meta()["last_heartbeat_date"] = at.date().isoformat()
+            meta = self.state.meta()
+            meta["last_heartbeat_date"] = at.date().isoformat()
+            meta["last_heartbeat_signature"] = self._heartbeat_signature()
             self.state.save()
             logger.info("하트비트 전송 완료")
         else:
@@ -141,13 +172,13 @@ class Monitor:
 
     def _isolated_scan(self, watcher: dict[str, Any], at: datetime) -> dict[str, Any]:
         try:
-            return self.cgv.scan_watcher(watcher, today=at.date())
+            return self.providers.scan_watcher(watcher, today=at.date())
         except StateError:
             raise
         except Exception as exc:
-            # A parser/CGV bug in one watcher must not kill the other watchers.
+            # A provider/parser bug in one watcher must not kill the other watchers.
             try:
-                active_dates = self.cgv.active_dates(watcher, today=at.date())
+                active_dates = self.providers.active_dates(watcher, today=at.date())
             except Exception:
                 active_dates = [value.replace("-", "") for value in watcher.get("dates", []) if value >= at.date().isoformat()]
             error = f"내부 watcher 오류({type(exc).__name__})"
@@ -158,6 +189,7 @@ class Monitor:
                 "errors": {date_raw: error for date_raw in active_dates},
                 "error_kinds": {date_raw: "internal" for date_raw in active_dates},
                 "active_dates": list(active_dates),
+                "provider_error": None,
             }
 
     @staticmethod
@@ -176,7 +208,7 @@ class Monitor:
 
     def run_cycle(self, at: datetime | None = None) -> dict[str, Any]:
         detected_at = at or self.now_fn()
-        self.cgv.start_cycle()
+        self.providers.start_cycle()
         self.session_cycles += 1
         health_events: list[dict[str, str]] = []
         cycle_new = 0
@@ -256,7 +288,7 @@ class Monitor:
         runtime_seconds = max(1.0, float(runtime_minutes) * 60.0)
         next_tick = started
         logger.info(
-            "v4 감시 시작: %d초 주기, 최대 %.1f분, watcher %d개",
+            "v5 감시 시작: %d초 주기, 최대 %.1f분, watcher %d개",
             self.interval,
             runtime_minutes,
             len(self.watchers),
@@ -289,7 +321,7 @@ class Monitor:
             if sleep_for > 0:
                 self.stop_event.wait(sleep_for)
         logger.info(
-            "v4 감시 정상 종료: 검사 %d회, 알림 %d건",
+            "v5 감시 정상 종료: 검사 %d회, 알림 %d건",
             self.session_cycles,
             self.session_alerts,
         )

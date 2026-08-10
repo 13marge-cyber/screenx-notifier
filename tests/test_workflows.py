@@ -41,7 +41,7 @@ def test_watch_loop_has_no_old_pat_or_shell_true_masking():
 def test_watch_loop_checks_out_latest_main_and_queues_successor_before_monitor():
     text = _text("watch-loop.yml")
     assert "ref: main" in text
-    assert text.index("후속 실행 1개 선예약") < text.index("1분 감시 (내부 315분 / 외부 325분 제한)")
+    assert text.index("후속 실행 정확히 1개 선예약") < text.index("1분 감시 (내부 315분 / 외부 325분 제한)")
 
 
 def test_watch_loop_has_three_layer_runtime_limits():
@@ -112,7 +112,7 @@ def test_ci_has_coverage_floor_and_strict_config_validation():
     assert "compileall" in text
 
 
-def test_selftest_uses_real_secrets_and_v4_command():
+def test_selftest_uses_real_secrets_and_v5_command():
     text = _text("selftest.yml")
     assert "TELEGRAM_BOT_TOKEN" in text
     assert "TELEGRAM_CHAT_IDS" in text
@@ -128,3 +128,28 @@ def test_ci_forces_zoneinfo_fallback_smoke_test():
     text = _text("ci.yml")
     assert "PYTHONTZPATH" in text
     assert "ZoneInfo('Asia/Seoul')" in text
+
+
+def test_watch_loop_does_not_add_successor_when_one_is_already_waiting():
+    text = _text("watch-loop.yml")
+    assert "gh run list" in text
+    assert '--workflow watch-loop.yml' in text
+    assert '.status == "queued"' in text
+    assert 'if [ "$waiting" -gt 0 ]' in text
+    assert "추가 예약하지 않음" in text
+    assert "중복 예약을 피하기 위해" in text
+
+
+def test_workflow_display_names_are_v5_and_old_concurrency_ids_are_intentionally_preserved():
+    assert _text("ci.yml").startswith("name: 영화 예매 알리미 v5 CI\n")
+    assert _text("selftest.yml").startswith("name: 영화 예매 알리미 v5 실연결 자체진단\n")
+    assert _text("watch-loop.yml").startswith("name: 영화 예매 알리미 v5 1분 감시 루프\n")
+    assert _text("watchdog.yml").startswith("name: 영화 예매 알리미 v5 Watchdog\n")
+    assert "screenx-watch-loop-${{ github.ref }}" in _text("watch-loop.yml")
+    assert "screenx-watchdog-main" in _text("watchdog.yml")
+
+
+def test_ci_tracks_v5_apply_script_not_v4():
+    text = _text("ci.yml")
+    assert "APPLY_V5.py" in text
+    assert "APPLY_V4.py" not in text

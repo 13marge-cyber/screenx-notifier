@@ -1,4 +1,4 @@
-"""Korea Standard Time helpers for screenx-notifier v4."""
+"""Korea Standard Time helpers for movie booking notifier v5."""
 from __future__ import annotations
 
 from datetime import date, datetime

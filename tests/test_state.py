@@ -229,3 +229,20 @@ def test_existing_v4_state_wins_and_does_not_remigrate_legacy(tmp_path):
     state = StateManager(new_dir, [old_dir])
     state.load([watcher_config(name="Watcher Name")])
     assert state.watcher("w")["known_keys"] == ["v4"]
+
+
+def test_legacy_schema4_state_without_heartbeat_signature_is_accepted(tmp_path):
+    data = v4_state(keys=["k"], heartbeat="2026-08-08")
+    assert "last_heartbeat_signature" not in data["meta"]
+    (tmp_path / "state.json").write_text(json.dumps(data), encoding="utf-8")
+    state = StateManager(tmp_path)
+    state.load()
+    assert state.meta()["last_heartbeat_signature"] is None
+
+
+def test_invalid_heartbeat_signature_fails_closed(tmp_path):
+    data = v4_state()
+    data["meta"]["last_heartbeat_signature"] = 123
+    (tmp_path / "state.json").write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(StateError):
+        StateManager(tmp_path).load()

@@ -27,10 +27,6 @@ class ApiResult:
         description = str(self.description or "")
         return description.startswith(("network:", "transport_backoff:")) or code == 429 or code >= 500
 
-    @property
-    def permanent_auth(self) -> bool:
-        return int(self.error_code or 0) in {400, 401, 403}
-
 
 def split_plain_text(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> list[str]:
     if limit < 1:

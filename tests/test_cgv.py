@@ -267,3 +267,25 @@ def test_mixed_old_and_unknown_rows_fail_closed_instead_of_partial_silent_drop(b
     result = client.scan_watcher(base_config["watchers"][0], today=date(2026, 8, 8))
     assert result["schedules"] == []
     assert result["error_kinds"]["20260821"] == "schema"
+
+@pytest.mark.parametrize("bad_data", [{}, "", 0, False, None])
+def test_falsey_non_list_data_fails_closed_instead_of_becoming_empty_list(base_config, bad_data):
+    payload = {"statusCode": 0, "statusMessage": "OK", "data": bad_data}
+    session = FakeHTTPSession(get_responses=[FakeResponse(payload=payload)])
+    client = CGVClient(base_config, session=session)
+    client.start_cycle()
+    result = client.scan_watcher(base_config["watchers"][0], today=date(2026, 8, 8))
+    assert result["schedules"] == []
+    assert result["failed_dates"] == ["20260821"]
+    assert result["error_kinds"]["20260821"] == "schema"
+    assert "SCHEMA_DRIFT" in result["errors"]["20260821"]
+
+
+def test_missing_data_field_fails_closed(base_config):
+    payload = {"statusCode": 0, "statusMessage": "OK"}
+    session = FakeHTTPSession(get_responses=[FakeResponse(payload=payload)])
+    client = CGVClient(base_config, session=session)
+    client.start_cycle()
+    result = client.scan_watcher(base_config["watchers"][0], today=date(2026, 8, 8))
+    assert result["failed_dates"] == ["20260821"]
+    assert result["error_kinds"]["20260821"] == "schema"

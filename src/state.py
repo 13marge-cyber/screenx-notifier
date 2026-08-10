@@ -34,6 +34,7 @@ def _default_state() -> dict[str, Any]:
         "watchers": {},
         "meta": {
             "last_heartbeat_date": None,
+            "last_heartbeat_signature": None,
             "migration_sources": [],
         },
     }
@@ -97,12 +98,16 @@ def _validate_state_data(data: Any) -> dict[str, Any]:
             date.fromisoformat(heartbeat)
         except ValueError as exc:
             raise StateError("meta.last_heartbeat_date가 손상되었습니다.") from exc
+    heartbeat_signature = meta.get("last_heartbeat_signature")
+    if heartbeat_signature is not None and not isinstance(heartbeat_signature, str):
+        raise StateError("meta.last_heartbeat_signature이 손상되었습니다.")
     migration_sources = meta.get("migration_sources", [])
     if not isinstance(migration_sources, list) or not all(
         isinstance(value, str) for value in migration_sources
     ):
         raise StateError("meta.migration_sources가 손상되었습니다.")
     normalized["meta"]["last_heartbeat_date"] = heartbeat
+    normalized["meta"]["last_heartbeat_signature"] = heartbeat_signature
     normalized["meta"]["migration_sources"] = list(dict.fromkeys(migration_sources))
     return normalized
 

@@ -1,4 +1,4 @@
-name: ScreenX v4 Watchdog
+name: 영화 예매 알리미 v5 Watchdog
 
 on:
   workflow_dispatch:

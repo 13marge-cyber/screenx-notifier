@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safely overlay screenx-notifier v4 onto an existing cloned repository.
+"""Safely overlay movie booking notifier v5 onto the existing cloned repository.
 
 Legacy state directories are deliberately preserved. Use --dry-run first.
 """
@@ -18,8 +18,8 @@ COPY_FILES = (
     "requirements-dev.txt",
     "README.md",
     ".gitignore",
-    "APPLY_V4.py",
-    "MIGRATION_V4.md",
+    "APPLY_V5.py",
+    "MIGRATION_V5.md",
 )
 REMOVE_PATHS = (
     "deploy",
@@ -31,6 +31,8 @@ REMOVE_PATHS = (
     "config.example.yaml",
     "requirements-vm.txt",
     "setup_watch.py",
+    "APPLY_V4.py",
+    "MIGRATION_V4.md",
 )
 PRESERVE = (
     "data/actions-state",
@@ -68,7 +70,7 @@ def apply(target: Path) -> None:
     if not target.exists() or not target.is_dir():
         raise SystemExit(f"대상 저장소 폴더가 없습니다: {target}")
     if target.resolve() == ROOT.resolve():
-        raise SystemExit("v4 배포 원본 폴더 자체에는 적용할 수 없습니다.")
+        raise SystemExit("v5 배포 원본 폴더 자체에는 적용할 수 없습니다.")
     if not (target / ".git").exists():
         raise SystemExit("대상에 .git이 없습니다. 먼저 GitHub 저장소를 clone 하세요.")
 
@@ -93,13 +95,13 @@ def apply(target: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="screenx-notifier v4 안전 적용 도구")
+    parser = argparse.ArgumentParser(description="영화 예매 알리미 v5 안전 적용 도구")
     parser.add_argument("target", help="git clone 한 기존 screenx-notifier 폴더")
     parser.add_argument("--dry-run", action="store_true", help="변경 계획만 표시")
     args = parser.parse_args()
     target = Path(args.target).expanduser().resolve()
 
-    print("=== screenx-notifier v4 적용 계획 ===")
+    print("=== 영화 예매 알리미 v5 적용 계획 ===")
     for item in plan(target):
         print(f"- {item}")
     if args.dry_run:
@@ -107,9 +109,14 @@ def main() -> int:
         return 0
 
     apply(target)
-    print("v4 파일 적용 완료")
+    print("v5 파일 적용 완료")
     print("중요: data/actions-state, data/v3-state, 기존 notifier-state JSON은 삭제하지 않았습니다.")
-    print("다음 단계: python -m pytest -q && git status")
+    print("다음 단계:")
+    print("  py -m compileall -q main.py src tests APPLY_V5.py")
+    print("  py main.py --config config.loop.yaml validate")
+    print("  py main.py --config config.loop.yaml check")
+    print("  py -m pytest -q")
+    print("  git status")
     return 0
 
 

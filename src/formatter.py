@@ -87,7 +87,7 @@ def build_rich_alert(
 def build_health_message(events: list[dict[str, str]], at: datetime | None = None) -> str:
     now = at or now_kst()
     has_down = any(event.get("kind") == "down" for event in events)
-    title = "⚠️ CGV 감시 상태 변경" if has_down else "✅ CGV 감시 복구"
+    title = "⚠️ 영화 예매 감시 상태 변경" if has_down else "✅ 영화 예매 감시 복구"
     lines = [title, f"⏰ {format_kst(now)}", ""]
     for event in events:
         if event["kind"] == "down":
@@ -108,7 +108,7 @@ def build_heartbeat(
 ) -> str:
     now = at or now_kst()
     lines = [
-        "💓 CGV 감시 하트비트",
+        "💓 영화 예매 감시 하트비트",
         f"⏰ 확인 시각: {format_kst(now)}",
         f"🔁 이번 세션 검사: {cycles}회",
         f"🔔 이번 세션 알림: {alerts}건",
@@ -130,12 +130,30 @@ def build_heartbeat(
     return "\n".join(lines)
 
 
-def build_selftest_rich(at: datetime | None = None) -> dict[str, Any]:
+def build_selftest_rich(
+    watchers: list[dict[str, Any]],
+    at: datetime | None = None,
+    *,
+    match_counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
     now = at or now_kst()
+    target_lines: list[str] = []
+    for watcher in watchers:
+        dates = ", ".join(str(value) for value in watcher.get("dates", []))
+        movie = ", ".join(str(value) for value in watcher.get("movie_keywords", []))
+        suffix = ""
+        if match_counts is not None:
+            suffix = f" · 현재 매칭 {int(match_counts.get(watcher['id'], 0))}개"
+        target_lines.append(
+            f"• {watcher['alert_title']} · {movie} · {dates}{suffix}"
+        )
+    targets = "\n".join(target_lines)
     return {
         "blocks": [
-            {"type": "heading", "text": "🧪 CGV 알리미 v4 자체진단", "size": 1},
+            {"type": "heading", "text": "🧪 영화 예매 알리미 v5 자체진단", "size": 1},
             {"type": "paragraph", "text": f"Rich Message 테스트\n⏰ 한국시간: {format_kst(now)}"},
+            {"type": "divider"},
+            {"type": "paragraph", "text": f"현재 감시 대상\n{targets}"},
             {"type": "divider"},
             {"type": "paragraph", "text": "이 메시지가 큰 제목으로 보이면 Rich Message 경로가 정상입니다."},
         ],

@@ -179,10 +179,27 @@ class CGVClient:
             )
             return FetchResult([], message[:160], response.status_code, error_kind="api")
 
-        data = payload.get("data") or []
+        # `data` must be present and must be a list.  Do not use ``or []`` here:
+        # falsey schema-drift values such as {}, "", 0, False or None would then be
+        # indistinguishable from a legitimate empty schedule list and could cause a
+        # silent miss.  v5 deliberately fails closed instead.
+        if "data" not in payload:
+            self._record_failure(breaker_key)
+            return FetchResult(
+                [],
+                "SCHEMA_DRIFT: CGV data 필드가 없습니다.",
+                response.status_code,
+                error_kind="schema",
+            )
+        data = payload["data"]
         if not isinstance(data, list):
             self._record_failure(breaker_key)
-            return FetchResult([], "CGV data 형식 오류", response.status_code, error_kind="schema")
+            return FetchResult(
+                [],
+                "SCHEMA_DRIFT: CGV data 필드가 리스트가 아닙니다.",
+                response.status_code,
+                error_kind="schema",
+            )
 
         if expect_showtimes and data:
             # Fail closed on partial schema drift too. A mixed old/new response must not
@@ -263,6 +280,8 @@ class CGVClient:
             end = parse_cgv_time(row.get("scnendTm")) or "?"
             matched.append(
                 {
+                    "provider": "cgv",
+                    "schedule_id": None,
                     "date_raw": date_raw,
                     "date": _fmt_date(date_raw),
                     "movie": movie,

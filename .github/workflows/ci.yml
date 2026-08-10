@@ -1,4 +1,4 @@
-name: ScreenX v4 CI
+name: 영화 예매 알리미 v5 CI
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
       - 'tests/**'
       - 'config.loop.yaml'
       - 'requirements*.txt'
-      - 'APPLY_V4.py'
+      - 'APPLY_V5.py'
       - '.github/workflows/**'
   pull_request:
     paths:
@@ -19,7 +19,7 @@ on:
       - 'tests/**'
       - 'config.loop.yaml'
       - 'requirements*.txt'
-      - 'APPLY_V4.py'
+      - 'APPLY_V5.py'
       - '.github/workflows/**'
 
 permissions:
@@ -52,7 +52,7 @@ jobs:
         run: python -c "from zoneinfo import ZoneInfo; assert ZoneInfo('Asia/Seoul').key == 'Asia/Seoul'"
 
       - name: 문법 검사
-        run: python -m compileall -q main.py src tests APPLY_V4.py
+        run: python -m compileall -q main.py src tests APPLY_V5.py
       - name: 설정 검사
         run: python main.py --config config.loop.yaml validate
       - name: 자동 테스트 + coverage

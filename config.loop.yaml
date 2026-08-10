@@ -1,4 +1,4 @@
-# screenx-notifier v4.0.2
+# 영화 예매 알리미 v5.0.1 — CGV IMAX + 메가박스 DOLBY CINEMA
 # 모든 사용자 표시 시간은 코드에서 Asia/Seoul(KST)로 고정합니다.
 # Telegram 비밀값은 GitHub Secrets에서만 읽습니다.
 # 필요 Secret: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_IDS (개인 chat id 정확히 1개)
@@ -9,8 +9,6 @@ monitor:
   interval_seconds: 60
   failure_alert_threshold: 3
   state_dir: "./data/notifier-state"
-  # 기존 v3/r3 및 현재 main(v2) 상태를 첫 실행 때 읽어 known_keys를 자동 이관합니다.
-  # 원본 legacy 파일은 수정/삭제하지 않습니다.
   legacy_state_dirs:
     - "./data/v3-state"
     - "./data/actions-state"
@@ -23,51 +21,70 @@ cgv:
   request_delay_seconds: 0.2
   circuit_breaker_failures: 3
 
+megabox:
+  timeout_seconds: 8
+  request_delay_seconds: 0.3
+  circuit_breaker_failures: 3
+  # selftest는 현재부터 이 범위에서 비어 있지 않은 상영표를 하나 찾아
+  # playSchdlNo + 상영관 식별 필드까지 실제 응답으로 검증합니다.
+  schema_probe_days: 4
+  # 운영 중에도 5분마다 현재/근일 비어 있지 않은 상영표를 canary로 확인합니다.
+  runtime_canary_interval_seconds: 300
+
 log_level: "INFO"
 
 watchers:
-  - id: "yongsan_spiderman_screenx"
-    name: "CGV 용산 4면 SCREENX 스파이더맨 지정일"
+  - id: "cgv_yongsan_odyssey_imax_20260829_30"
+    name: "CGV 용산 IMAX · 오디세이 · 8/29-30"
     enabled: true
+    provider: "cgv"
     theater_code: "0013"
     theater_name: "용산아이파크몰"
-    alert_title: "용산CGV"
-    hall_keywords: ["PRIVATE BOX"]
-    movie_keywords: ["스파이더맨"]
-    dates:
-      - "2026-08-10"
-      - "2026-08-13"
-      - "2026-08-14"
-      - "2026-08-18"
-      - "2026-08-21"
-      - "2026-08-22"
-      - "2026-08-23"
-
-  - id: "yeongdeungpo_spiderman_screenx"
-    name: "CGV 영등포 SCREENX 스파이더맨 지정일"
-    enabled: true
-    theater_code: "0059"
-    theater_name: "영등포"
-    alert_title: "영등포CGV"
-    hall_keywords: ["SCREENX"]
-    movie_keywords: ["스파이더맨"]
-    dates:
-      - "2026-08-13"
-      - "2026-08-14"
-      - "2026-08-18"
-      - "2026-08-21"
-      - "2026-08-22"
-      - "2026-08-23"
-
-  - id: "yongsan_odyssey_imax"
-    name: "CGV 용산 IMAX 오디세이 지정일"
-    enabled: true
-    theater_code: "0013"
-    theater_name: "용산아이파크몰"
-    alert_title: "용산CGV"
+    alert_title: "용산 IMAX"
     hall_keywords: ["IMAX", "아이맥스"]
     movie_keywords: ["오디세이"]
     dates:
-      - "2026-08-21"
-      - "2026-08-22"
-      - "2026-08-23"
+      - "2026-08-29"
+      - "2026-08-30"
+
+  - id: "cgv_cheonho_odyssey_imax_20260829_30"
+    name: "CGV 천호 IMAX · 오디세이 · 8/29-30"
+    enabled: true
+    provider: "cgv"
+    theater_code: "0199"
+    theater_name: "천호"
+    alert_title: "천호 IMAX"
+    hall_keywords: ["IMAX", "아이맥스"]
+    movie_keywords: ["오디세이"]
+    dates:
+      - "2026-08-29"
+      - "2026-08-30"
+
+  - id: "cgv_gwanggyo_odyssey_imax_20260829_30"
+    name: "CGV 광교 IMAX · 오디세이 · 8/29-30"
+    enabled: true
+    provider: "cgv"
+    theater_code: "0257"
+    theater_name: "광교"
+    alert_title: "광교 IMAX"
+    hall_keywords: ["IMAX", "아이맥스"]
+    movie_keywords: ["오디세이"]
+    dates:
+      - "2026-08-29"
+      - "2026-08-30"
+
+  - id: "megabox_suwonak_dolby_odyssey_spiderman_20260815_17"
+    name: "메가박스 수원AK Dolby · 오디세이+스파이더맨 · 8/15-17"
+    enabled: true
+    provider: "megabox"
+    theater_code: "0052"
+    area_code: "30"
+    theater_name: "수원AK플라자(수원역)"
+    alert_title: "수원AK Dolby"
+    # Dolby Atmos / DOLBY VISION+ATMOS는 통과시키지 않습니다.
+    hall_keywords: ["DOLBY CINEMA"]
+    movie_keywords: ["오디세이", "스파이더맨 브랜드 뉴 데이"]
+    dates:
+      - "2026-08-15"
+      - "2026-08-16"
+      - "2026-08-17"

@@ -124,7 +124,7 @@ def test_recovery_sends_once(tmp_path, base_config):
     at = datetime(2026, 8, 8, 12, 0, tzinfo=KST)
     for _ in range(5):
         monitor.run_cycle(at)
-    messages = [m for m in tg.plain_calls if "CGV 감시" in m and ("상태 변경" in m or "감시 복구" in m)]
+    messages = [m for m in tg.plain_calls if "영화 예매 감시" in m and ("상태 변경" in m or "감시 복구" in m)]
     assert len(messages) == 2
     assert "복구" in messages[1]
     assert state.watcher("yongsan_test")["health"]["down_notified"] is False
@@ -147,7 +147,7 @@ def test_heartbeat_after_0900_once_per_day(tmp_path, base_config):
     at = datetime(2026, 8, 8, 9, 2, tzinfo=KST)
     monitor.run_cycle(at)
     monitor.run_cycle(at)
-    heartbeat = [m for m in tg.plain_calls if "CGV 감시 하트비트" in m]
+    heartbeat = [m for m in tg.plain_calls if "영화 예매 감시 하트비트" in m]
     assert len(heartbeat) == 1
     assert state.meta()["last_heartbeat_date"] == "2026-08-08"
 
@@ -155,7 +155,7 @@ def test_heartbeat_after_0900_once_per_day(tmp_path, base_config):
 def test_heartbeat_not_before_time(tmp_path, base_config):
     monitor, state, tg = make_monitor(tmp_path, base_config, [good_result()])
     monitor.run_cycle(datetime(2026, 8, 8, 8, 59, tzinfo=KST))
-    assert not [m for m in tg.plain_calls if "CGV 감시 하트비트" in m]
+    assert not [m for m in tg.plain_calls if "영화 예매 감시 하트비트" in m]
 
 
 def test_partial_failure_still_alerts_successful_date(tmp_path, base_config):
@@ -173,7 +173,7 @@ def test_run_cycle_passes_kst_date_to_cgv(tmp_path, base_config):
     monitor, state, tg = make_monitor(tmp_path, base_config, [good_result()])
     at = datetime(2026, 8, 8, 23, 59, tzinfo=KST)
     monitor.run_cycle(at)
-    assert monitor.cgv.last_today.isoformat() == "2026-08-08"
+    assert monitor.providers.last_today.isoformat() == "2026-08-08"
 
 
 def test_duplicate_cgv_rows_generate_one_notification_entry(tmp_path, base_config):
@@ -340,3 +340,45 @@ def test_run_cycle_without_explicit_time_uses_injected_clock(tmp_path, base_conf
     monitor.run_cycle()
     assert cgv.last_today.isoformat() == "2026-08-08"
     assert not [m for m in tg.plain_calls if "하트비트" in m]
+
+
+def test_heartbeat_refreshes_same_day_when_target_signature_changes(tmp_path, base_config):
+    monitor, state, tg = make_monitor(tmp_path, base_config, [good_result()])
+    at = datetime(2026, 8, 8, 9, 2, tzinfo=KST)
+    monitor.run_cycle(at)
+    first_signature = state.meta()["last_heartbeat_signature"]
+    assert first_signature
+
+    changed = deepcopy(base_config)
+    changed["watchers"][0]["dates"] = ["2026-08-29", "2026-08-30"]
+    second_monitor, state2, _tg2 = make_monitor(tmp_path, changed, [good_result()], tg)
+    second_monitor.run_cycle(at)
+    heartbeats = [m for m in tg.plain_calls if "영화 예매 감시 하트비트" in m]
+    assert len(heartbeats) == 2
+    assert state2.meta()["last_heartbeat_date"] == "2026-08-08"
+    assert state2.meta()["last_heartbeat_signature"] != first_signature
+
+
+def test_provider_canary_failure_triggers_health_without_suppressing_new_alert(tmp_path, base_config):
+    found = schedule()
+    canary_fail = good_result([found])
+    canary_fail["provider_error"] = "MEGABOX_PROBE_EMPTY: canary empty"
+    monitor, state, tg = make_monitor(
+        tmp_path,
+        base_config,
+        [deepcopy(canary_fail), deepcopy(canary_fail), deepcopy(canary_fail)],
+    )
+    at = datetime(2026, 8, 8, 8, 0, tzinfo=KST)
+    for _ in range(3):
+        monitor.run_cycle(at)
+
+    # The detected showtime is delivered once even while the independent provider
+    # canary reports a health problem, and the repeated canary problem still
+    # escalates to a down notification after the configured threshold.
+    assert len(tg.alert_calls) == 1
+    health = state.watcher("yongsan_test")["health"]
+    assert health["consecutive_failures"] == 3
+    assert health["down_notified"] is True
+    health_messages = [m for m in tg.plain_calls if "감시 상태 변경" in m]
+    assert len(health_messages) == 1
+    assert "provider canary 실패" in health_messages[0]
