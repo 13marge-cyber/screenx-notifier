@@ -11,7 +11,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-12T09:47:45.727338+09:00"
+        "last_success_at": "2026-08-12T15:03:14.464223+09:00"
       },
       "known_keys": []
     },
@@ -20,7 +20,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-12T09:47:45.727338+09:00"
+        "last_success_at": "2026-08-12T15:03:14.464223+09:00"
       },
       "known_keys": []
     },
@@ -29,7 +29,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-12T09:47:45.727338+09:00"
+        "last_success_at": "2026-08-12T15:03:14.464223+09:00"
       },
       "known_keys": []
     },
@@ -38,14 +38,25 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-12T09:47:45.727338+09:00"
+        "last_success_at": "2026-08-12T15:03:14.464223+09:00"
       },
       "known_keys": [
         "megabox|20260815|2608150052055",
         "megabox|20260815|2608150052056",
         "megabox|20260815|2608150052057",
         "megabox|20260815|2608150052058",
-        "megabox|20260815|2608150052059"
+        "megabox|20260815|2608150052059",
+        "megabox|20260816|2608160052073",
+        "megabox|20260816|2608160052074",
+        "megabox|20260816|2608160052075",
+        "megabox|20260816|2608160052076",
+        "megabox|20260816|2608160052077",
+        "megabox|20260817|2608170052002",
+        "megabox|20260817|2608170052003",
+        "megabox|20260817|2608170052004",
+        "megabox|20260817|2608170052005",
+        "megabox|20260817|2608170052006",
+        "megabox|20260817|2608170052052"
       ]
     }
   }
