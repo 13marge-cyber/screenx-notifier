@@ -1,6 +1,6 @@
 {
   "meta": {
-    "last_heartbeat_date": "2026-08-12",
+    "last_heartbeat_date": "2026-08-13",
     "last_heartbeat_signature": "54789077769d3b20f2ae246b1978574747c54ad549189fb0ac90673d57c0ab44",
     "migration_sources": []
   },
@@ -11,7 +11,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T06:48:25.380514+09:00"
+        "last_success_at": "2026-08-13T12:03:50.628598+09:00"
       },
       "known_keys": []
     },
@@ -20,7 +20,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T06:48:25.380514+09:00"
+        "last_success_at": "2026-08-13T12:03:50.628598+09:00"
       },
       "known_keys": []
     },
@@ -29,7 +29,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T06:48:25.380514+09:00"
+        "last_success_at": "2026-08-13T12:03:50.628598+09:00"
       },
       "known_keys": []
     },
@@ -38,7 +38,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T06:48:25.380514+09:00"
+        "last_success_at": "2026-08-13T12:03:50.628598+09:00"
       },
       "known_keys": [
         "megabox|20260815|2608150052055",
