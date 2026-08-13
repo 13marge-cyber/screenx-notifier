@@ -11,7 +11,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T12:04:50.628560+09:00"
+        "last_success_at": "2026-08-13T17:20:18.077269+09:00"
       },
       "known_keys": []
     },
@@ -20,7 +20,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T12:04:50.628560+09:00"
+        "last_success_at": "2026-08-13T17:20:18.077269+09:00"
       },
       "known_keys": []
     },
@@ -29,7 +29,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T12:04:50.628560+09:00"
+        "last_success_at": "2026-08-13T17:20:18.077269+09:00"
       },
       "known_keys": []
     },
@@ -38,7 +38,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-13T12:04:50.628560+09:00"
+        "last_success_at": "2026-08-13T17:20:18.077269+09:00"
       },
       "known_keys": [
         "megabox|20260815|2608150052055",
