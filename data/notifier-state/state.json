@@ -11,7 +11,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-17T00:11:48.391579+09:00"
+        "last_success_at": "2026-08-17T05:27:08.705932+09:00"
       },
       "known_keys": []
     },
@@ -20,7 +20,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-17T00:11:48.391579+09:00"
+        "last_success_at": "2026-08-17T05:27:08.705932+09:00"
       },
       "known_keys": []
     },
@@ -29,16 +29,16 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-17T00:11:48.391579+09:00"
+        "last_success_at": "2026-08-17T05:27:08.705932+09:00"
       },
       "known_keys": []
     },
     "megabox_suwonak_dolby_odyssey_spiderman_20260815_17": {
       "health": {
-        "consecutive_failures": 0,
+        "consecutive_failures": 1,
         "down_notified": false,
-        "last_error": null,
-        "last_success_at": "2026-08-17T00:11:48.391579+09:00"
+        "last_error": "실패 날짜 1개 (20260817: 네트워크 오류(ConnectionError))",
+        "last_success_at": "2026-08-17T05:26:08.705940+09:00"
       },
       "known_keys": [
         "megabox|20260815|2608150052055",
