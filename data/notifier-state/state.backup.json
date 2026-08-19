@@ -11,27 +11,64 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-19T15:16:59.222593+09:00"
+        "last_success_at": "2026-08-19T20:32:25.018273+09:00"
       },
-      "known_keys": []
+      "known_keys": [
+        "cgv|20260829|오디세이|IMAX관|07:00",
+        "cgv|20260829|오디세이|IMAX관|10:25",
+        "cgv|20260829|오디세이|IMAX관|13:50",
+        "cgv|20260829|오디세이|IMAX관|17:15",
+        "cgv|20260829|오디세이|IMAX관|20:40",
+        "cgv|20260829|오디세이|IMAX관|24:05",
+        "cgv|20260830|오디세이|IMAX관|09:00",
+        "cgv|20260830|오디세이|IMAX관|12:30",
+        "cgv|20260830|오디세이|IMAX관|16:00",
+        "cgv|20260830|오디세이|IMAX관|19:30",
+        "cgv|20260830|오디세이|IMAX관|23:00"
+      ]
     },
     "cgv_gwanggyo_odyssey_imax_20260829_30": {
       "health": {
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-19T15:16:59.222593+09:00"
+        "last_success_at": "2026-08-19T20:32:25.018273+09:00"
       },
-      "known_keys": []
+      "known_keys": [
+        "cgv|20260829|오디세이|IMAX관|07:00",
+        "cgv|20260829|오디세이|IMAX관|10:25",
+        "cgv|20260829|오디세이|IMAX관|13:50",
+        "cgv|20260829|오디세이|IMAX관|17:15",
+        "cgv|20260829|오디세이|IMAX관|20:40",
+        "cgv|20260829|오디세이|IMAX관|24:05",
+        "cgv|20260830|오디세이|IMAX관|08:00",
+        "cgv|20260830|오디세이|IMAX관|11:25",
+        "cgv|20260830|오디세이|IMAX관|14:50",
+        "cgv|20260830|오디세이|IMAX관|18:15",
+        "cgv|20260830|오디세이|IMAX관|21:40"
+      ]
     },
     "cgv_yongsan_odyssey_imax_20260829_30": {
       "health": {
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-19T15:16:59.222593+09:00"
+        "last_success_at": "2026-08-19T20:32:25.018273+09:00"
       },
-      "known_keys": []
+      "known_keys": [
+        "cgv|20260829|오디세이|IMAX관|07:30",
+        "cgv|20260829|오디세이|IMAX관|11:00",
+        "cgv|20260829|오디세이|IMAX관|14:30",
+        "cgv|20260829|오디세이|IMAX관|18:00",
+        "cgv|20260829|오디세이|IMAX관|21:30",
+        "cgv|20260829|오디세이|IMAX관|25:00",
+        "cgv|20260830|오디세이|IMAX관|07:30",
+        "cgv|20260830|오디세이|IMAX관|11:00",
+        "cgv|20260830|오디세이|IMAX관|14:30",
+        "cgv|20260830|오디세이|IMAX관|18:00",
+        "cgv|20260830|오디세이|IMAX관|21:30",
+        "cgv|20260830|오디세이|IMAX관|25:00"
+      ]
     },
     "megabox_suwonak_dolby_odyssey_spiderman_20260815_17": {
       "health": {
