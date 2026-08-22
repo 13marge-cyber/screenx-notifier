@@ -11,7 +11,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-22T22:10:12.344885+09:00"
+        "last_success_at": "2026-08-23T03:25:41.467662+09:00"
       },
       "known_keys": [
         "cgv|20260829|오디세이|IMAX관|07:00",
@@ -32,7 +32,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-22T22:10:12.344885+09:00"
+        "last_success_at": "2026-08-23T03:25:41.467662+09:00"
       },
       "known_keys": [
         "cgv|20260829|오디세이|IMAX관|07:00",
@@ -53,7 +53,7 @@
         "consecutive_failures": 0,
         "down_notified": false,
         "last_error": null,
-        "last_success_at": "2026-08-22T22:10:12.344885+09:00"
+        "last_success_at": "2026-08-23T03:25:41.467662+09:00"
       },
       "known_keys": [
         "cgv|20260829|오디세이|IMAX관|07:30",
